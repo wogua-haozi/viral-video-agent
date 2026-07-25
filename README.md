@@ -217,7 +217,7 @@ vNext-C0 补齐 B 站搜索结果的稳定账号身份数据契约：合法 `own
 
 vNext-C 由独立默认关闭开关 `ENABLE_CANDIDATE_CONFIRMATION=false` 控制，且只支持 `GRAPH_VERSION=v2`。开启时，Worker 先运行 Entry / Planner / Researcher / Evidence Gate，确定性提取最多 8 个稳定 MID 候选并持久化采集与候选快照，然后进入 `waiting_candidate_confirmation`。用户逐项提交 `confirmed`、`excluded` 或 `uncertain` 后，同一个 Job 增加执行版本并从 PostgreSQL 快照恢复，只运行 Analyst / Writer，不重新执行 Brief Validator、Planner、Researcher、搜索、MCP、UAPI 或 ASR。关闭时继续使用 C0 与 vNext-A/B 既有完整链路。
 
-经过严格校验并持久化的 `TopicSpec` 是 Entry 的结构化分析契约：只要平台为 `bilibili`，即使原始输入只是“相机”或“分析相机账号”，Collection 也必须进入 Planner / Researcher / Evidence Gate，不再要求原始字符串命中分析关键词。原始 `job.query` / `user_request` 保持不变，用于展示和审计；系统不会覆盖输入，也不会拼接关键词绕过路由。非空 TopicSpec 若平台或 Schema 非法，会以 `invalid_topic_spec` 保守终止；没有 TopicSpec 时仍使用原有字符串路由。
+`JobCreate` 与 `JobRevisionCreate` 使用同一 query 契约：先去除首尾空白，再校验长度为 2～2000；“相机”“摄影”“美食”“AI”可进入系统，纯空白、单字符和超长输入仍返回 422。裁剪后的原始语义作为 `job.query` / `user_request` 保留，用于展示和审计，系统不会覆盖语义或拼接关键词。经过严格校验并持久化的 `TopicSpec` 是 Entry 的结构化分析契约：只要平台为 `bilibili`，Collection 就必须进入 Planner / Researcher / Evidence Gate。非空 TopicSpec 若平台或 Schema 非法，会以 `invalid_topic_spec` 保守终止；没有 TopicSpec 时仍使用原有字符串路由。
 
 候选按匹配 Evidence 数降序、首次 Evidence 顺序、MID 稳定排序；`candidate_id` 由 `sha256("bilibili|mid:{mid}")` 确定性生成。同 MID 合并，同名不同 MID 分离，无合法 MID 的视频可以保留为 Evidence，但不会生成候选。最终报告只把 confirmed 对应 Evidence 交给 Analyst / Writer，uncertain 只进入“未纳入或待确认范围”，excluded 不进入正常竞品结论。
 
@@ -292,7 +292,7 @@ cd ..
 docker compose config --quiet
 ```
 
-当前 vNext-C Gate 阻塞修复候选：完整 Python pytest 为 140 passed。新增 10 条真实 Collection Graph 路由测试，覆盖模糊 query 接管、direct-answer 旁路禁止、持久化候选与等待确认、无 TopicSpec 回退、明确请求回归、功能开关回退、非法 TopicSpec 拒绝和单次 Brief/搜索/采集；原 vNext-C 18、C0 15、vNext-A 14、vNext-B 21 条回归继续通过。前端 lint 与生产 build、Python compile、Compose config、PostgreSQL 16 migration 往返和 `git diff --check` 均通过。完整结果见 [vNext-C 验证记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)。
+当前 vNext-C Gate 阻塞修复候选：完整 Python pytest 为 146 passed。入口/路由测试共 16 条，其中新增真实 API → Brief Service → clarification API → Worker → Collection Graph 组合链路，以及 JobCreate/JobRevisionCreate 的两字符、去空白和非法边界；原 vNext-C 18、C0 15、vNext-A 14、vNext-B 21 条回归继续通过。前端 lint 与生产 build、Python compile、Compose config、PostgreSQL 16 migration 往返和 `git diff --check` 均通过。完整结果见 [vNext-C 验证记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)。
 
 ### 真实 API 冒烟（2026-07-13）
 

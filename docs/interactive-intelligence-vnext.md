@@ -76,6 +76,8 @@ stateDiagram-v2
 
 ## API 契约、权限与幂等
 
+- `JobCreate.query` 与 `JobRevisionCreate.query` 共用同一冻结边界：Pydantic 先裁剪首尾空白，再按 2～2000 字符校验。“相机”“摄影”“美食”“AI”可创建或修订；纯空白、单字符和 2001 字符输入被拒绝。
+- 数据库存储裁剪后的用户原始语义；不会为了路由拼接平台、分析动作或其他关键词，也不会用 TopicSpec 覆盖 `analysis_jobs.query`。
 - `GET /jobs/{job_id}/clarification`：返回当前 pending 问题、最多轮次和历史。
 - `POST /jobs/{job_id}/clarification`：支持 `selected_option_id`、`custom_answer` 或二者同时提交。
 - 两个接口都要求登录并复用 Job 所有权检查；其他用户统一得到 `JOB_NOT_FOUND`。
@@ -187,7 +189,7 @@ C0 没有新增数据库 Schema、Migration、API、状态、功能开关或前�
 
 Synthesis 图不包含 Entry、Planner、Researcher 或 Evidence Gate；候选确认后的 Worker 也不再调用 Brief Validator、搜索、MCP、UAPI 或 ASR。恢复不依赖进程内 `MemorySaver`，并使用新的 `execution_version` 与 `candidate_synthesis_runs` 绑定本次决策。
 
-Gate 阻塞修复后，Collection 的 Entry 同时接受经过验证的 TopicSpec 作为结构化分析意图，不再只依赖原始 query 的关键词。该修复只闭合“澄清 → TopicSpec → Collection”路由断点，不改变候选提取、排序、MID 身份、快照、用户决策、报告过滤或 P0-C 逻辑。
+Gate 阻塞修复后，两字符模糊主题可以通过 `POST /jobs` 到达 Brief Validator；Collection 的 Entry 同时接受经过验证的 TopicSpec 作为结构化分析意图，不再只依赖 query 关键词。组合测试使用真实 API、Brief Service、clarification API、Worker 和 `build_collection_graph_v2()`，证明“相机 → waiting_user → TopicSpec → Collection → waiting_candidate_confirmation”。该修复不改变候选提取、排序、MID 身份、快照、用户决策、报告过滤或 P0-C 逻辑。
 
 ### 候选身份、排序与快照
 
@@ -217,7 +219,7 @@ Synthesis 重新计算并校验采集哈希、候选哈希和决策哈希。conf
 
 vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已补齐稳定账号身份数据契约。vNext-C 已完成候选提取、不可变快照、用户逐项确认、同 Job 恢复与 confirmed-only Synthesis 的工程闭环，当前停在 Gate Review。
 
-PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。vNext-C Canary 只证明当前公开入口能返回稳定 MID，用户确认闭环只证明工程边界和可恢复性；TopicSpec 路由修复也只证明澄清后的结构化范围能到达真实 Collection。它没有证明自动候选质量提升、模型准确率、稳定 Top 5、完整行业覆盖或生产部署。P0-C 继续失败冻结。
+PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。vNext-C Canary 只证明当前公开入口能返回稳定 MID，用户确认闭环只证明工程边界和可恢复性；用户入口组合测试只证明短主题能经澄清到达真实 Collection。它没有证明自动候选质量提升、模型准确率、稳定 Top 5、完整行业覆盖或生产部署。P0-C 继续失败冻结。
 
 ## 后续阶段
 

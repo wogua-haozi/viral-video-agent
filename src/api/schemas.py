@@ -21,10 +21,15 @@ class UserRead(BaseModel):
 
 
 class JobCreate(BaseModel):
-    query: str = Field(min_length=3, max_length=2000)
+    query: str = Field(min_length=2, max_length=2000)
     platforms: list[str] = Field(default_factory=lambda: ["bilibili"])
     analysis_mode: Literal["standard", "deep"] = "standard"
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def strip_query(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("platforms")
     @classmethod
@@ -35,8 +40,13 @@ class JobCreate(BaseModel):
 
 
 class JobRevisionCreate(BaseModel):
-    query: str = Field(min_length=3, max_length=2000)
+    query: str = Field(min_length=2, max_length=2000)
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def strip_query(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 class JobEventRead(BaseModel):

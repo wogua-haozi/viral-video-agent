@@ -5,14 +5,25 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src import worker
 from src.briefing import service as briefing_service
-from src.db.models import AnalysisJob, CandidateAccount, CollectionSnapshot, User
-from src.db.session import Base
+from src.briefing.schemas import BriefDecision, BriefOption, TopicSpec
+from src.db.models import (
+    AnalysisJob,
+    CandidateAccount,
+    CandidateSnapshot,
+    CollectionSnapshot,
+    JobClarification,
+    User,
+)
+from src.db.session import Base, get_db
 from src.graph import v2
+from src.main import app
+from src.queue import get_job_queue
 
 
 def topic_spec(**overrides) -> dict:
@@ -41,6 +52,39 @@ async def session_factory(tmp_path):
         await connection.run_sync(Base.metadata.create_all)
     yield factory
     await engine.dispose()
+
+
+class CapturingQueue:
+    def __init__(self):
+        self.calls: list[tuple[str, int]] = []
+
+    async def enqueue(self, job_id: str, execution_version: int = 0) -> str:
+        self.calls.append((job_id, execution_version))
+        return f"analysis:{job_id}:v{execution_version}"
+
+
+@pytest_asyncio.fixture
+async def api_client(session_factory):
+    queue = CapturingQueue()
+
+    async def override_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_job_queue] = lambda: queue
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client, session_factory, queue
+    app.dependency_overrides.clear()
+
+
+async def register(client: AsyncClient, email: str) -> uuid.UUID:
+    response = await client.post(
+        "/auth/register",
+        json={"email": email, "password": "strong-pass-123"},
+    )
+    assert response.status_code == 201, response.text
+    return uuid.UUID(response.json()["id"])
 
 
 @pytest.fixture
@@ -109,6 +153,236 @@ async def invoke_collection(query: str, structured_scope: dict | None = None) ->
     return await graph.ainvoke(
         worker._initial_state(uuid.uuid4(), query, ["bilibili"], structured_scope)
     )
+
+
+@pytest.mark.asyncio
+async def test_short_query_runs_from_api_through_clarification_to_candidate_confirmation(
+    api_client,
+    monkeypatch,
+    fake_collection_dependencies,
+):
+    client, factory, queue = api_client
+    calls, _ = fake_collection_dependencies
+    await register(client, "topic-routing-api@example.com")
+    created = await client.post(
+        "/jobs",
+        json={
+            "query": "相机",
+            "platforms": ["bilibili"],
+            "analysis_mode": "standard",
+            "idempotency_key": "topic-routing-api-job",
+        },
+    )
+    assert created.status_code == 202, created.text
+    assert created.json()["query"] == "相机"
+    job_id = uuid.UUID(created.json()["id"])
+    assert queue.calls == [(str(job_id), 0)]
+
+    brief_calls = []
+
+    class FakeBriefValidator:
+        async def validate(self, query, history, round_number):
+            brief_calls.append({
+                "query": query,
+                "history": history,
+                "round": round_number,
+            })
+            if round_number == 1:
+                return BriefDecision(
+                    need_clarification=True,
+                    question="是否只纳入专业相机账号？",
+                    options=[
+                        BriefOption(
+                            id="strict",
+                            label="只看专业账号",
+                            description="排除偶尔发布相机内容的综合账号",
+                        ),
+                        BriefOption(
+                            id="generalist",
+                            label="允许综合账号",
+                            description="纳入稳定发布相机内容的综合账号",
+                        ),
+                    ],
+                    allow_custom=True,
+                    verification="需要确认账号范围",
+                    confidence=0.6,
+                )
+            assert history == [{
+                "round": 1,
+                "question": "是否只纳入专业相机账号？",
+                "selected_option_id": "strict",
+                "custom_answer": None,
+            }]
+            return BriefDecision(
+                need_clarification=False,
+                verification="用户已确认只纳入专业账号",
+                topic_spec=TopicSpec.model_validate(topic_spec()),
+                confidence=0.88,
+            )
+
+    monkeypatch.setattr(worker, "async_session_factory", factory)
+    monkeypatch.setattr(briefing_service, "async_session_factory", factory)
+    monkeypatch.setattr(briefing_service, "BriefValidator", FakeBriefValidator)
+    monkeypatch.setattr(worker, "ENABLE_INTERACTIVE_BRIEF", True)
+    monkeypatch.setattr(worker, "ENABLE_CANDIDATE_CONFIRMATION", True)
+    monkeypatch.setattr(worker, "collection_graph", v2.build_collection_graph_v2())
+
+    await worker.run_analysis_job(
+        {"provider_semaphore": asyncio.Semaphore(1)},
+        str(job_id),
+        0,
+    )
+    waiting = await client.get(f"/jobs/{job_id}")
+    assert waiting.status_code == 200
+    assert waiting.json()["status"] == "waiting_user"
+    clarification = await client.get(f"/jobs/{job_id}/clarification")
+    assert clarification.status_code == 200
+    request_id = clarification.json()["current"]["request_id"]
+
+    answered = await client.post(
+        f"/jobs/{job_id}/clarification",
+        json={
+            "request_id": request_id,
+            "selected_option_id": "strict",
+        },
+    )
+    assert answered.status_code == 202, answered.text
+    assert answered.json()["status"] == "pending"
+    assert answered.json()["execution_version"] == 1
+    assert queue.calls == [(str(job_id), 0), (str(job_id), 1)]
+
+    await worker.run_analysis_job(
+        {"provider_semaphore": asyncio.Semaphore(1)},
+        str(job_id),
+        1,
+    )
+
+    async with factory() as db:
+        job = await db.get(AnalysisJob, job_id)
+        clarification_rows = list((await db.scalars(
+            select(JobClarification).where(JobClarification.job_id == job_id)
+        )).all())
+        collection_count = await db.scalar(
+            select(func.count()).select_from(CollectionSnapshot).where(
+                CollectionSnapshot.job_id == job_id
+            )
+        )
+        candidate_snapshot_count = await db.scalar(
+            select(func.count()).select_from(CandidateSnapshot).where(
+                CandidateSnapshot.job_id == job_id
+            )
+        )
+        candidate_count = await db.scalar(
+            select(func.count())
+            .select_from(CandidateAccount)
+            .join(CandidateSnapshot, CandidateSnapshot.id == CandidateAccount.snapshot_id)
+            .where(CandidateSnapshot.job_id == job_id)
+        )
+        assert job.query == "相机"
+        assert job.topic_spec == topic_spec()
+        assert job.status == "waiting_candidate_confirmation"
+        assert len(clarification_rows) == 1
+        assert clarification_rows[0].status == "answered"
+        assert collection_count == 1
+        assert candidate_snapshot_count == 1
+        assert candidate_count == 1
+
+    assert brief_calls == [
+        {"query": "相机", "history": [], "round": 1},
+        {
+            "query": "相机",
+            "history": [{
+                "round": 1,
+                "question": "是否只纳入专业相机账号？",
+                "selected_option_id": "strict",
+                "custom_answer": None,
+            }],
+            "round": 2,
+        },
+    ]
+    assert calls == {"planner": 1, "researcher": 1, "tool": 1, "direct": 0}
+
+
+@pytest.mark.asyncio
+async def test_job_create_trims_two_character_query(api_client):
+    client, factory, queue = api_client
+    await register(client, "short-query-create@example.com")
+    response = await client.post(
+        "/jobs",
+        json={
+            "query": "  AI  ",
+            "platforms": ["bilibili"],
+            "analysis_mode": "standard",
+            "idempotency_key": "short-query-create",
+        },
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["query"] == "AI"
+    job_id = uuid.UUID(response.json()["id"])
+    async with factory() as db:
+        assert (await db.get(AnalysisJob, job_id)).query == "AI"
+    assert queue.calls == [(str(job_id), 0)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["   ", "相", "x" * 2001])
+async def test_job_create_rejects_queries_outside_frozen_contract(api_client, query):
+    client, _, queue = api_client
+    await register(client, f"invalid-create-{uuid.uuid4()}@example.com")
+    response = await client.post(
+        "/jobs",
+        json={
+            "query": query,
+            "platforms": ["bilibili"],
+            "analysis_mode": "standard",
+            "idempotency_key": f"invalid-create-{uuid.uuid4()}",
+        },
+    )
+    assert response.status_code == 422
+    assert queue.calls == []
+
+
+@pytest.mark.asyncio
+async def test_job_revision_uses_same_trimmed_two_character_query_contract(api_client):
+    client, factory, queue = api_client
+    await register(client, "short-query-revision@example.com")
+    source = await client.post(
+        "/jobs",
+        json={
+            "query": "分析B站相机赛道的竞争账号",
+            "platforms": ["bilibili"],
+            "analysis_mode": "standard",
+            "idempotency_key": "short-query-revision-source",
+        },
+    )
+    assert source.status_code == 202, source.text
+    source_id = uuid.UUID(source.json()["id"])
+    assert (await client.post(f"/jobs/{source_id}/cancel")).status_code == 200
+
+    revised = await client.post(
+        f"/jobs/{source_id}/revisions",
+        json={
+            "query": "  相机  ",
+            "idempotency_key": "short-query-revision-target",
+        },
+    )
+    assert revised.status_code == 202, revised.text
+    assert revised.json()["query"] == "相机"
+    revised_id = uuid.UUID(revised.json()["id"])
+    async with factory() as db:
+        assert (await db.get(AnalysisJob, revised_id)).query == "相机"
+
+    for index, invalid_query in enumerate(("   ", "相", "x" * 2001), 1):
+        invalid = await client.post(
+            f"/jobs/{source_id}/revisions",
+            json={
+                "query": invalid_query,
+                "idempotency_key": f"invalid-revision-{index}",
+            },
+        )
+        assert invalid.status_code == 422
+
+    assert queue.calls == [(str(source_id), 0), (str(revised_id), 0)]
 
 
 @pytest.mark.asyncio
