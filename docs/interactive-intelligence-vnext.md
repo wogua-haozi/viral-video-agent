@@ -41,6 +41,12 @@ vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄�
 
 平台只能是 `bilibili`；字符串、数组、时间窗口和置信度均有边界。两轮后仍未确认的范围必须进入 `assumptions`，且保守回退的置信度不会伪装为高置信度。
 
+### TopicSpec 作为 Entry 的结构化分析契约
+
+TopicSpec 一旦由 Brief Validator 严格校验并持久化，就接管“是否进入分析工作流”的 Entry 判定。合法且 `platform=bilibili` 的 TopicSpec 会直接进入 Planner、Researcher 和 Evidence Gate；原始 query 即使是“相机”“分析相机账号”这类无法命中旧字符串规则的模糊输入，也不会再落入 direct-answer。
+
+原始 `analysis_jobs.query` 与图状态中的 `user_request` 保持原样，用于展示、追溯和审计。实现不覆盖用户输入，也不构造带关键词的伪请求。Entry 会把 TopicSpec 重新规范化为 Schema 输出；非空 TopicSpec 若平台、字段、边界或额外字段非法，则以 `invalid_topic_spec` 保守终止，不调用 direct-answer、Planner、Researcher 或采集工具。没有 TopicSpec 时，`requires_analysis_workflow()` 和原有不支持平台判断保持不变。
+
 ## BriefDecision
 
 `need_clarification=true` 时必须包含一个问题、2～4 个严格选项并允许自定义回答；不能同时包含 TopicSpec。`need_clarification=false` 时必须包含合法 TopicSpec。模型 JSON、Schema 或 Provider 失败时走保守澄清。最多两轮由 Service 单点控制：初次判断可生成 round 1，第一次回答后仍不明确可生成 round 2；第二次回答后直接生成带假设、低置信度的收窄 TopicSpec，不再发起第 3 次 LLM 请求。
@@ -181,6 +187,8 @@ C0 没有新增数据库 Schema、Migration、API、状态、功能开关或前�
 
 Synthesis 图不包含 Entry、Planner、Researcher 或 Evidence Gate；候选确认后的 Worker 也不再调用 Brief Validator、搜索、MCP、UAPI 或 ASR。恢复不依赖进程内 `MemorySaver`，并使用新的 `execution_version` 与 `candidate_synthesis_runs` 绑定本次决策。
 
+Gate 阻塞修复后，Collection 的 Entry 同时接受经过验证的 TopicSpec 作为结构化分析意图，不再只依赖原始 query 的关键词。该修复只闭合“澄清 → TopicSpec → Collection”路由断点，不改变候选提取、排序、MID 身份、快照、用户决策、报告过滤或 P0-C 逻辑。
+
 ### 候选身份、排序与快照
 
 - `candidate_id` 为 `cand_` 加 `sha256("bilibili|mid:{mid}")` 的前 24 位十六进制摘要。
@@ -209,7 +217,7 @@ Synthesis 重新计算并校验采集哈希、候选哈希和决策哈希。conf
 
 vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已补齐稳定账号身份数据契约。vNext-C 已完成候选提取、不可变快照、用户逐项确认、同 Job 恢复与 confirmed-only Synthesis 的工程闭环，当前停在 Gate Review。
 
-PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。vNext-C Canary 只证明当前公开入口能返回稳定 MID，用户确认闭环只证明工程边界和可恢复性；它没有证明自动候选质量提升、模型准确率、稳定 Top 5、完整行业覆盖或生产部署。P0-C 继续失败冻结。
+PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。vNext-C Canary 只证明当前公开入口能返回稳定 MID，用户确认闭环只证明工程边界和可恢复性；TopicSpec 路由修复也只证明澄清后的结构化范围能到达真实 Collection。它没有证明自动候选质量提升、模型准确率、稳定 Top 5、完整行业覆盖或生产部署。P0-C 继续失败冻结。
 
 ## 后续阶段
 

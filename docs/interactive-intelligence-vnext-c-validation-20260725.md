@@ -10,6 +10,13 @@
 - 本阶段只实现“真实 Evidence → 确定性候选 → 用户逐项确认 → 原快照 Synthesis”的工程闭环；不重新修复 P0-C，不进入 vNext-D、P0-D 或 P0-E。
 - 最终提交、远端 SHA、ahead/behind 和工作树状态以本次 Gate 汇报为准。
 
+### Gate 阻塞修复追加轮次
+
+- 修复起始 SHA：`298b36e45e6d00401041c2d0c9bd651c058a83cb`，工作分支仍为 `feat/interactive-intelligence-vnext-c`。
+- 修复前远端 ahead/behind 为 `0/0`，工作树干净。
+- 已确认断点：Brief Validator 已持久化 TopicSpec，但 Worker 保留原始 query 传入 Collection 后，Entry 仍只调用 `requires_analysis_workflow(user_request)`；“相机”“分析相机账号”等输入因此错误进入 direct-answer。
+- 本轮只修复 TopicSpec 到 Collection Entry 的路由接管，不修改候选排序、MID 身份、快照、决策、报告过滤或冻结的 P0-C。
+
 ## 最小真实身份 Canary
 
 正式实现前，对当前既有公开 B 站入口执行一次严格受限 Canary：
@@ -52,6 +59,14 @@ Synthesis:  PostgreSQL snapshot -> confirmed Evidence filter -> Analyst -> Write
 - 确认后不再执行 Brief Validator、搜索、MCP、UAPI、ASR 或任何重新采集路径。
 - Worker 根据 `candidate_synthesis_runs` 和新的 `execution_version` 判断 Synthesis，不依赖进程内 `MemorySaver`。
 - 自动化测试将运行时图和测试图指向同一 Collection / Synthesis 核心函数，避免平行实现漂移。
+
+### TopicSpec Entry 路由修复
+
+经过严格校验并持久化的 TopicSpec 现在是 Collection Entry 的结构化分析契约。合法且 `platform=bilibili` 时，Entry 直接进入 Planner / Researcher / Evidence Gate，不再要求原始 query 同时包含平台与分析动作关键词。原始 `analysis_jobs.query` 和图内 `user_request` 不覆盖、不改写、不拼接，继续用于展示与审计。
+
+非空 TopicSpec 会在 Entry 再次按 `TopicSpec` Schema 校验并规范化；非法平台、空必填集合或额外字段会以 `invalid_topic_spec` 保守终止，且 direct-answer、Planner、Researcher 和采集工具调用均为 0。TopicSpec 不存在时，旧 `requires_analysis_workflow()` 行为保持不变；候选确认开关关闭时，Worker 继续运行原完整图。
+
+修复前真实 Collection Graph 回归稳定复现：3 个模糊输入均为 `planner=0 / researcher=0 / tool=0 / direct=1`。修复后同一组输入均为 `planner=1 / researcher=1 / tool=1 / direct=0`，并在 Fake 外部依赖下完成“模糊输入 → 已持久化 TopicSpec → 真实 Collection → 候选持久化 → waiting_candidate_confirmation”。Brief Validator、Planner、Researcher 与搜索各只执行一次。
 
 ## 快照、Evidence 与数据库
 
@@ -159,14 +174,17 @@ Synthesis 恢复时重新计算并核对 Collection 哈希、Candidate 哈希和
 全部自动化测试使用 Fake/Mock，不调用真实收费服务：
 
 - `tests/test_candidate_confirmation_vnext_c.py`：18 passed。
+- `tests/test_topic_spec_collection_routing_vnext_c.py`：10 passed，使用真实 `build_collection_graph_v2()` 与 Worker Collection 路径；外部 LLM 与搜索均为 Fake。
+- `tests/test_interactive_brief.py`：14 passed。
 - vNext-C0：15 passed。
 - vNext-A：14 passed。
 - vNext-B：21 passed。
-- 完整 Python pytest：130 passed；只有既有 LangGraph pending-deprecation warning。
+- 完整 Python pytest：140 passed；只有既有 LangGraph pending-deprecation warning。
 - 前端 lint、TypeScript/生产 build 通过。
 - Python compile、`docker compose config --quiet`、`git diff --check` 通过。
+- 本轮 5 个变更文件的高风险秘密模式、私有本机路径和危险命令模式扫描均为 0；测试中的两个 `hashed_password="hashed"` 仅为固定占位值，不是凭证。
 
-18 条 vNext-C 测试覆盖候选身份/去重/排序/上限/哈希、严格契约、快照跨会话恢复、跨 Job/执行版本隔离、无候选诚实终止、所有权、完整决策校验、至少一个 confirmed、幂等/冲突、单次入队、派发恢复、16 KiB 限制、confirmed-only Synthesis、禁止重复 Brief/Planner/Researcher/搜索/ASR、报告边界、哈希篡改、手动 retry、取消并发、分阶段图节点和前端可访问性合同。
+原 18 条 vNext-C 测试覆盖候选身份/去重/排序/上限/哈希、严格契约、快照跨会话恢复、跨 Job/执行版本隔离、无候选诚实终止、所有权、完整决策校验、至少一个 confirmed、幂等/冲突、单次入队、派发恢复、16 KiB 限制、confirmed-only Synthesis、禁止重复 Brief/Planner/Researcher/搜索/ASR、报告边界、哈希篡改、手动 retry、取消并发、分阶段图节点和前端可访问性合同。新增 10 条路由测试覆盖 TopicSpec 对模糊 query 的结构化接管、direct-answer 禁止、waiting confirmation 持久化、无 TopicSpec 与明确请求回归、功能开关回退、非法 Schema 拒绝及不重复 Brief/搜索/采集。
 
 ## 外部调用、安全与负面边界
 
@@ -174,11 +192,11 @@ Synthesis 恢复时重新计算并核对 Collection 哈希、Candidate 哈希和
 - 未通过命令查看或输出 `.env` 内容；未提交 `.env`、Key、Token、Cookie、真实 MID、账号名、标题、搜索响应、私有评测、P0 Evidence、Bundle 或 archive 内容。项目既有配置模块在导入时仍保留 `load_dotenv()` 行为。
 - 未提交 QA 密码、SQLite、临时路径、数据库日志、Playwright 调试目录、构建缓存或临时容器数据。
 - 默认 `ENABLE_CANDIDATE_CONFIRMATION=false`；App、Worker、Compose 与 `.env.example` 保持一致，不改变 Researcher 微调模型开关。
-- Canary 只证明稳定 MID 可读；工程 Gate 不证明候选质量提升、自动竞品识别、模型准确率、真实用户价值、生产 SLA 或 P0-C 成功。
+- Canary 只证明稳定 MID 可读；TopicSpec 路由修复只证明澄清后的结构化范围能进入真实 Collection。工程 Gate 不证明候选质量提升、自动竞品识别、模型准确率、真实用户价值、生产 SLA 或 P0-C 成功。
 - P0-C 质量 Gate 继续失败冻结；P0-D/P0-E 未开始；vNext-D 未开始。
 
 ## Gate 结论
 
-vNext-C 工程闭环 Gate 候选通过，等待总控复核。当前证据证明：候选来自真实公开 Evidence 的稳定 MID；采集与确认可跨数据库会话恢复；用户确认后不重复采集；excluded/uncertain 不会进入正常分析；权限、执行版本、哈希和幂等边界成立；完整回归通过。
+vNext-C 工程闭环 Gate 阻塞修复候选通过，等待总控复核。当前证据证明：经过严格校验的 TopicSpec 能接管真实 Collection Entry 路由；原始 query 保持可审计；候选来自真实公开 Evidence 的稳定 MID；采集与确认可跨数据库会话恢复；用户确认后不重复采集；excluded/uncertain 不会进入正常分析；权限、执行版本、哈希和幂等边界成立；完整回归通过。
 
 必须停在 vNext-C Gate Review。该结论不代表候选质量、P0-C 或生产部署通过，不得自动进入 vNext-D。

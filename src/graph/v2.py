@@ -6,11 +6,13 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
+from pydantic import ValidationError
 
 from src.agents.analyst import analyst_node
 from src.agents.researcher import call_tool_via_mcp
 from src.agents.supervisor import _direct_answer, extract_text, get_llm
 from src.agents.writer import writer_node
+from src.briefing.schemas import TopicSpec
 from src.config import (
     ANALYSIS_CONFIDENCE_THRESHOLD,
     V2_ANALYST_MAX_ITERATIONS,
@@ -95,12 +97,30 @@ async def entry_node(state: AgentState) -> dict:
     """只在入口做一次意图判断；正常工作流不再反复调用Supervisor。"""
     trace_tracker.start_agent("entry")
     user_request = state.get("user_request", "")
+    raw_topic_spec = state.get("topic_spec")
     result = {
         "workflow_version": "v2",
         "available_capabilities": capability_snapshot(),
     }
+    validated_topic_spec = None
+    if raw_topic_spec:
+        try:
+            validated_topic_spec = TopicSpec.model_validate(raw_topic_spec)
+        except ValidationError:
+            result.update({
+                "report_final": (
+                    "# 研究范围无效\n\n"
+                    "已确认的 TopicSpec 未通过严格校验，因此没有扩大范围或继续采集。"
+                ),
+                "task_complete": True,
+                "termination_reason": "invalid_topic_spec",
+            })
+            trace_tracker.end_agent("entry")
+            return result
+        result["topic_spec"] = validated_topic_spec.model_dump(mode="json")
+
     unsupported = requested_platforms(user_request, state.get("platforms", [])) - {"bilibili"}
-    if requires_current_video_data(user_request) and unsupported:
+    if validated_topic_spec is None and requires_current_video_data(user_request) and unsupported:
         result.update({
             "report_final": (
                 "# 当前能力不支持\n\n"
@@ -112,7 +132,7 @@ async def entry_node(state: AgentState) -> dict:
         })
         trace_tracker.end_agent("entry")
         return result
-    if not requires_analysis_workflow(user_request):
+    if validated_topic_spec is None and not requires_analysis_workflow(user_request):
         result.update({
             "report_final": await _direct_answer(user_request),
             "task_complete": True,
