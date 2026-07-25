@@ -65,7 +65,7 @@ export function ReportClaim({ claim }: { claim: Claim }) {
 }
 
 const phaseLabels: Record<string, string> = {
-  queued: '排队中', clarification_needed: '需要补充研究范围', clarification_answered: '已收到范围补充', scope_confirmed: '研究范围已确认', collecting: '正在采集 B 站数据', retrieving: '正在检索知识库', validating: '正在验证 Evidence', analyzing: '正在分析', writing: '正在生成报告', persisting: '正在保存报告', completed: '报告已生成', partial: '已生成部分结果', failed: '任务失败', cancelled: '任务已取消',
+  queued: '排队中', clarification_needed: '需要补充研究范围', clarification_answered: '已收到范围补充', scope_confirmed: '研究范围已确认', collecting: '正在采集 B 站数据', retrieving: '正在检索知识库', waiting_candidate_confirmation: '等待确认候选账号', candidate_decisions_submitted: '候选确认已提交', validating: '正在验证 Evidence', analyzing: '正在分析', writing: '正在生成报告', persisting: '正在保存报告', completed: '报告已生成', partial: '已生成部分结果', failed: '任务失败', cancelled: '任务已取消',
 };
 
 export function JobProgress({ status, events }: { status: string; events: JobEvent[] }) {

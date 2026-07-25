@@ -2,18 +2,31 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from src.api.errors import AppError, ERROR_MESSAGES
 from src.api.schemas import JobCreate, JobEventRead, JobRead, JobRevisionCreate
 from src.auth.dependencies import get_current_user
 from src.briefing.schemas import ClarificationAnswer, ClarificationRead
+from src.candidates.schemas import CandidateDecisionSubmit, CandidateListRead, CandidateRead, CandidateTopicSummary
+from src.candidates.service import decision_payload_hash
 from src.config import USER_MONTHLY_JOB_LIMIT
-from src.db.models import AnalysisJob, JobEvent, User
+from src.db.models import (
+    AnalysisJob,
+    CandidateDecision,
+    CandidateDecisionBatch,
+    CandidateSnapshot,
+    CandidateSynthesisRun,
+    JobEvent,
+    User,
+)
 from src.db.session import get_db
+from src.dispatch import DISPATCH_PENDING_MESSAGE
 from src.queue import JobQueue, get_job_queue
-from src.repositories import JobRepository, ReportRepository
+from src.repositories import CandidateRepository, JobRepository, ReportRepository
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -32,11 +45,19 @@ async def _mark_enqueue_failed(db: AsyncSession, job_id: uuid.UUID, execution_ve
     await db.rollback()
 
 
-async def _enqueue_committed_job(db: AsyncSession, queue: JobQueue, job_id: uuid.UUID, execution_version: int) -> AnalysisJob | None:
+async def _enqueue_committed_job(
+    db: AsyncSession,
+    queue: JobQueue,
+    job_id: uuid.UUID,
+    execution_version: int,
+    *,
+    mark_failed: bool = True,
+) -> AnalysisJob | None:
     try:
         arq_job_id = await queue.enqueue(str(job_id), execution_version)
     except Exception:
-        await _mark_enqueue_failed(db, job_id, execution_version)
+        if mark_failed:
+            await _mark_enqueue_failed(db, job_id, execution_version)
         raise
 
     repo = JobRepository(db)
@@ -48,6 +69,23 @@ async def _enqueue_committed_job(db: AsyncSession, queue: JobQueue, job_id: uuid
         return job
     await db.rollback()
     return job
+
+
+async def _leave_dispatch_pending(db: AsyncSession, job_id: uuid.UUID, execution_version: int) -> None:
+    job = await JobRepository(db).get_for_update(job_id)
+    if job and job.execution_version == execution_version and job.status == "pending":
+        job.error_code = "DISPATCH_PENDING"
+        job.error_message = DISPATCH_PENDING_MESSAGE
+        db.add(JobEvent(
+            job_id=job.id,
+            event_type="dispatch_pending",
+            message=DISPATCH_PENDING_MESSAGE,
+            progress=job.progress,
+            level="warning",
+        ))
+        await db.commit()
+        return
+    await db.rollback()
 
 
 async def require_job(job_id: uuid.UUID, user: User, db: AsyncSession):
@@ -98,6 +136,191 @@ async def list_jobs(limit: int = Query(20, ge=1, le=100), offset: int = Query(0,
 @router.get("/{job_id}", response_model=JobRead)
 async def get_job(job_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await require_job(job_id, user, db)
+
+
+def _candidate_list(snapshot: CandidateSnapshot, job: AnalysisJob) -> CandidateListRead:
+    decisions = {
+        item.candidate_account_id: item
+        for item in (snapshot.decision_batch.decisions if snapshot.decision_batch else [])
+    }
+    candidates = []
+    for item in sorted(snapshot.candidates, key=lambda candidate: candidate.sort_order):
+        decision = decisions.get(item.id)
+        candidates.append(CandidateRead(
+            candidate_id=item.candidate_id,
+            platform=item.platform,
+            platform_account_id=item.platform_account_id,
+            display_name=item.display_name,
+            profile_url=item.profile_url,
+            source_evidence_ids=list(item.source_evidence_ids),
+            matched_video_count=item.matched_video_count,
+            sample_titles=list(item.sample_titles),
+            evidence_links=list(item.evidence_links),
+            why_surfaced=list(item.why_surfaced),
+            identity_confidence=item.identity_confidence,
+            decision=decision.decision if decision else "undecided",
+            reason=decision.reason if decision else "",
+        ))
+    return CandidateListRead(
+        snapshot_id=snapshot.id,
+        snapshot_version=snapshot.schema_version,
+        topic_spec=CandidateTopicSummary.model_validate(snapshot.topic_summary),
+        candidates=candidates,
+        max_candidates=snapshot.max_candidates,
+        can_submit=job.can_confirm_candidates and snapshot.decision_batch is None,
+        snapshot_hash=snapshot.snapshot_hash,
+    )
+
+
+async def _candidate_snapshot_for_job(db: AsyncSession, job: AnalysisJob) -> CandidateSnapshot | None:
+    options = (
+        selectinload(CandidateSnapshot.candidates),
+        selectinload(CandidateSnapshot.decision_batch).selectinload(CandidateDecisionBatch.decisions),
+    )
+    snapshot = await db.scalar(
+        select(CandidateSnapshot)
+        .options(*options)
+        .where(
+            CandidateSnapshot.job_id == job.id,
+            CandidateSnapshot.source_execution_version == job.execution_version,
+        )
+    )
+    if snapshot:
+        return snapshot
+    synthesis_run = await db.scalar(
+        select(CandidateSynthesisRun)
+        .options(
+            selectinload(CandidateSynthesisRun.decision_batch)
+            .selectinload(CandidateDecisionBatch.snapshot)
+            .selectinload(CandidateSnapshot.candidates),
+            selectinload(CandidateSynthesisRun.decision_batch)
+            .selectinload(CandidateDecisionBatch.snapshot)
+            .selectinload(CandidateSnapshot.decision_batch)
+            .selectinload(CandidateDecisionBatch.decisions),
+        )
+        .where(
+            CandidateSynthesisRun.job_id == job.id,
+            CandidateSynthesisRun.execution_version == job.execution_version,
+        )
+    )
+    return synthesis_run.decision_batch.snapshot if synthesis_run else None
+
+
+@router.get("/{job_id}/candidates", response_model=CandidateListRead)
+async def get_candidates(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    job = await require_job(job_id, user, db)
+    snapshot = await _candidate_snapshot_for_job(db, job)
+    if not snapshot:
+        raise AppError(404, "CANDIDATE_SNAPSHOT_NOT_FOUND", ERROR_MESSAGES["CANDIDATE_SNAPSHOT_NOT_FOUND"])
+    return _candidate_list(snapshot, job)
+
+
+@router.post("/{job_id}/candidates/decisions", response_model=JobRead, status_code=202)
+async def submit_candidate_decisions(
+    job_id: uuid.UUID,
+    payload: CandidateDecisionSubmit,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    queue: JobQueue = Depends(get_job_queue),
+):
+    payload_hash = decision_payload_hash(
+        str(payload.snapshot_id),
+        [item.model_dump(mode="json") for item in payload.decisions],
+    )
+    job_repo = JobRepository(db)
+    candidate_repo = CandidateRepository(db)
+    job = await job_repo.get_owned_for_update(job_id, user.id)
+    if not job:
+        raise AppError(404, "JOB_NOT_FOUND", ERROR_MESSAGES["JOB_NOT_FOUND"])
+
+    existing = await candidate_repo.decision_by_request(payload.request_id)
+    if existing:
+        if (
+            existing.job_id == job.id
+            and existing.snapshot_id == payload.snapshot_id
+            and existing.submitted_by == user.id
+            and existing.payload_hash == payload_hash
+        ):
+            return job
+        raise AppError(409, "CANDIDATE_DECISION_CONFLICT", ERROR_MESSAGES["CANDIDATE_DECISION_CONFLICT"])
+
+    snapshot = await db.scalar(
+        select(CandidateSnapshot)
+        .options(
+            selectinload(CandidateSnapshot.candidates),
+            selectinload(CandidateSnapshot.decision_batch),
+        )
+        .where(
+            CandidateSnapshot.id == payload.snapshot_id,
+            CandidateSnapshot.job_id == job.id,
+        )
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    if not snapshot or snapshot.source_execution_version != job.execution_version:
+        raise AppError(409, "CANDIDATE_SNAPSHOT_NOT_FOUND", ERROR_MESSAGES["CANDIDATE_SNAPSHOT_NOT_FOUND"])
+    if job.status != "waiting_candidate_confirmation" or not job.can_confirm_candidates:
+        raise AppError(409, "CANDIDATE_DECISION_INVALID", ERROR_MESSAGES["CANDIDATE_DECISION_INVALID"])
+    if snapshot.decision_batch:
+        raise AppError(409, "CANDIDATE_DECISION_ALREADY_SUBMITTED", ERROR_MESSAGES["CANDIDATE_DECISION_ALREADY_SUBMITTED"])
+
+    submitted_ids = [item.candidate_id for item in payload.decisions]
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise AppError(422, "CANDIDATE_DECISION_INVALID", ERROR_MESSAGES["CANDIDATE_DECISION_INVALID"])
+    candidates_by_id = {item.candidate_id: item for item in snapshot.candidates}
+    if set(submitted_ids) != set(candidates_by_id):
+        raise AppError(422, "CANDIDATE_DECISION_INVALID", ERROR_MESSAGES["CANDIDATE_DECISION_INVALID"])
+    if not any(item.decision == "confirmed" for item in payload.decisions):
+        raise AppError(422, "CANDIDATE_DECISION_INVALID", "至少纳入一个候选账号后才能继续。")
+
+    batch = CandidateDecisionBatch(
+        request_id=payload.request_id,
+        snapshot_id=snapshot.id,
+        job_id=job.id,
+        submitted_by=user.id,
+        payload_hash=payload_hash,
+    )
+    db.add(batch)
+    await db.flush()
+    for item in payload.decisions:
+        db.add(CandidateDecision(
+            batch_id=batch.id,
+            candidate_account_id=candidates_by_id[item.candidate_id].id,
+            decision=item.decision,
+            reason=item.reason,
+        ))
+
+    job.status = "pending"
+    job.progress = max(job.progress, 60)
+    job.error_code = None
+    job.error_message = None
+    job.execution_version += 1
+    job.arq_job_id = None
+    job.dispatch_pending_at = datetime.now(timezone.utc)
+    execution_version = job.execution_version
+    db.add(CandidateSynthesisRun(
+        job_id=job.id,
+        decision_batch_id=batch.id,
+        execution_version=execution_version,
+    ))
+    db.add(JobEvent(
+        job_id=job.id,
+        event_type="candidate_decisions_submitted",
+        message="已保存候选确认，任务将基于原采集快照继续生成报告。",
+        progress=job.progress,
+        level="info",
+    ))
+    await db.commit()
+    try:
+        scheduled_job = await _enqueue_committed_job(db, queue, job.id, execution_version, mark_failed=False)
+    except Exception as exc:
+        await _leave_dispatch_pending(db, job.id, execution_version)
+        raise AppError(503, "DISPATCH_PENDING", DISPATCH_PENDING_MESSAGE) from exc
+    return scheduled_job or job
 
 
 @router.get("/{job_id}/events", response_model=dict)
@@ -171,7 +394,7 @@ async def answer_clarification(
 @router.post("/{job_id}/cancel", response_model=JobRead)
 async def cancel_job(job_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     job = await require_job(job_id, user, db)
-    if job.status not in {"pending", "running", "waiting_user"}:
+    if job.status not in {"pending", "running", "waiting_user", "waiting_candidate_confirmation"}:
         return job
     job.status, job.cancelled_at, job.error_code, job.error_message = "cancelled", datetime.now(timezone.utc), "JOB_CANCELLED", ERROR_MESSAGES["JOB_CANCELLED"]
     job.dispatch_pending_at = None
@@ -188,7 +411,11 @@ async def retry_job(job_id: uuid.UUID, user: User = Depends(get_current_user), d
         raise AppError(404, "JOB_NOT_FOUND", ERROR_MESSAGES["JOB_NOT_FOUND"])
     if not job.can_retry:
         raise AppError(409, "JOB_NOT_RETRYABLE", ERROR_MESSAGES["JOB_NOT_RETRYABLE"])
-    await repo.clear_outputs(job.id)
+    decision_batch = await CandidateRepository(db).latest_decision_batch(job.id)
+    if decision_batch:
+        await repo.clear_report_outputs(job.id)
+    else:
+        await repo.clear_outputs(job.id)
     set_committed_value(job, "reports", [])
     job.retry_count += 1
     job.execution_version += 1
@@ -196,6 +423,12 @@ async def retry_job(job_id: uuid.UUID, user: User = Depends(get_current_user), d
     job.arq_job_id = None
     job.dispatch_pending_at = datetime.now(timezone.utc)
     execution_version = job.execution_version
+    if decision_batch:
+        db.add(CandidateSynthesisRun(
+            job_id=job.id,
+            decision_batch_id=decision_batch.id,
+            execution_version=execution_version,
+        ))
     db.add(JobEvent(job_id=job.id, event_type="queued", message=f"任务已重新入队（第 {job.retry_count} 次重试）。", progress=0, level="info"))
     await db.commit()
     try:

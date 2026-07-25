@@ -207,17 +207,21 @@ ASR_MAX_VIDEOS=5
 
 ## 后台任务 API
 
-### 交互式竞争情报 vNext-A / vNext-B / vNext-C0（交互功能默认关闭）
+### 交互式竞争情报 vNext-A / vNext-B / vNext-C0 / vNext-C（交互功能默认关闭）
 
 `ENABLE_INTERACTIVE_BRIEF=false`（App 与 Worker 一致）时，现有 Job 行为保持不变。开启后，模糊需求会先生成最多两轮澄清，任务进入 `waiting_user`；Job 页分开展示当前问题和已回答历史。
 
 修改研究范围会创建新 Job，并用 `revision_of_job_id` 保留审计关系，不覆盖旧回答、TopicSpec 或报告。Worker 每分钟有限批量 reconciliation 超时的 `pending + arq_job_id=null` 派发意图，复用原 `execution_version` 和确定性 Arq ID，不增加 `retry_count`。
 
-vNext-C0 只补齐 B 站搜索结果的稳定账号身份数据契约：合法 `owner.mid` 被规范化为 `platform_account_id`，并生成 `https://space.bilibili.com/{mid}` 形式的规范主页；`display_name` 仅用于展示，不能作为身份或合并依据。缺少合法 MID 时身份和主页保持 `null`，不会按账号名猜测。身份字段同时进入搜索 raw data 和 Evidence 的有限 `data_fields` 投影；现有 `author` 字段保留兼容。C0 不增加候选提取、确认 API、状态、数据库表、前端或收费调用，也没有开始 vNext-C 主阶段。
+vNext-C0 补齐 B 站搜索结果的稳定账号身份数据契约：合法 `owner.mid` 被规范化为 `platform_account_id`，并生成 `https://space.bilibili.com/{mid}` 形式的规范主页；`display_name` 仅用于展示，不能作为身份或合并依据。缺少合法 MID 时身份和主页保持 `null`，不会按账号名猜测。身份字段同时进入搜索 raw data 和 Evidence 的有限 `data_fields` 投影；现有 `author` 字段保留兼容。
 
-详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md) 与 [vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md)。P0-C 质量 Gate 仍失败并冻结，vNext-C、P0-D/P0-E 未开始。
+vNext-C 由独立默认关闭开关 `ENABLE_CANDIDATE_CONFIRMATION=false` 控制，且只支持 `GRAPH_VERSION=v2`。开启时，Worker 先运行 Entry / Planner / Researcher / Evidence Gate，确定性提取最多 8 个稳定 MID 候选并持久化采集与候选快照，然后进入 `waiting_candidate_confirmation`。用户逐项提交 `confirmed`、`excluded` 或 `uncertain` 后，同一个 Job 增加执行版本并从 PostgreSQL 快照恢复，只运行 Analyst / Writer，不重新执行 Brief Validator、Planner、Researcher、搜索、MCP、UAPI 或 ASR。关闭时继续使用 C0 与 vNext-A/B 既有完整链路。
 
-Job 响应提供服务端计算的 `can_retry` / `can_revise`。前端不再仅凭状态猜测操作；保留 pending clarification 的 cancelled Job 不显示重试，但仍可创建范围修订。
+候选按匹配 Evidence 数降序、首次 Evidence 顺序、MID 稳定排序；`candidate_id` 由 `sha256("bilibili|mid:{mid}")` 确定性生成。同 MID 合并，同名不同 MID 分离，无合法 MID 的视频可以保留为 Evidence，但不会生成候选。最终报告只把 confirmed 对应 Evidence 交给 Analyst / Writer，uncertain 只进入“未纳入或待确认范围”，excluded 不进入正常竞品结论。
+
+详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md)、[vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md) 与 [vNext-C 验证](docs/interactive-intelligence-vnext-c-validation-20260725.md)。P0-C 质量 Gate 仍失败并冻结；vNext-C 当前停在 Gate Review，vNext-D、P0-D/P0-E 未开始。
+
+Job 响应提供服务端计算的 `can_retry` / `can_revise` / `can_confirm_candidates`。前端不再仅凭状态猜测操作；等待候选确认时不可普通 retry、可取消和修改范围，只有服务端允许时才显示候选提交入口。
 
 ```text
 POST   /jobs
@@ -229,12 +233,14 @@ POST   /jobs/{job_id}/revisions
 GET    /jobs/{job_id}/events
 GET    /jobs/{job_id}/clarification
 POST   /jobs/{job_id}/clarification
+GET    /jobs/{job_id}/candidates
+POST   /jobs/{job_id}/candidates/decisions
 GET    /reports/{report_id}
 POST   /reports/{report_id}/shares
 POST   /reports/{report_id}/feedback
 ```
 
-状态：`pending`、`running`、`waiting_user`、`completed`、`partial`、`failed`、`cancelled`。
+状态：`pending`、`running`、`waiting_user`、`waiting_candidate_confirmation`、`completed`、`partial`、`failed`、`cancelled`。
 
 Redis 只保存队列、临时状态、事件和缓存；长期业务事实全部进入 PostgreSQL。
 
@@ -284,7 +290,7 @@ cd ..
 docker compose config --quiet
 ```
 
-当前 vNext-C0 Gate 候选：完整 Python pytest 为 112 passed。C0 新增 15 条 Fake/Mock 身份契约测试，覆盖 MID 规范化、无身份不猜测、同名不同 MID、严格 Schema、Evidence 投影和搜索入口透传；C0 + Evidence/Graph/MCP 定向回归为 34 passed。vNext-A/B 与 API、Graph、Model 回归继续包含在完整测试中。完整结果见 [vNext-C0 验证记录](docs/interactive-intelligence-vnext-c0-validation-20260725.md)。
+当前 vNext-C Gate 候选：完整 Python pytest 为 130 passed。vNext-C 新增 18 条 Fake/Mock 测试，覆盖候选身份、去重/排序/上限、快照跨会话恢复与隔离、无候选诚实终止、所有权、提交校验、幂等/冲突、单次入队、派发恢复、Synthesis 过滤、禁止重复采集、报告边界和前端合同；C0 15、vNext-A 14、vNext-B 21 条回归继续通过。前端 lint 与生产 build、Python compile、Compose config、PostgreSQL 16 migration 往返和 `git diff --check` 均通过。完整结果见 [vNext-C 验证记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)。
 
 ### 真实 API 冒烟（2026-07-13）
 

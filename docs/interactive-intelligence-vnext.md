@@ -2,7 +2,7 @@
 
 ## 产品目标
 
-vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄清闭环：模糊输入不立即进入 Planner、Researcher、MCP、ASR 或搜索；系统先形成一个严格的 `BriefDecision`，必要时把 Job 持久化为 `waiting_user`。用户回答后恢复同一个 Job，最多澄清两轮，形成 `TopicSpec` 后再执行现有 LangGraph。
+vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄清闭环：模糊输入不立即进入 Planner、Researcher、MCP、ASR 或搜索；系统先形成一个严格的 `BriefDecision`，必要时把 Job 持久化为 `waiting_user`。用户回答后恢复同一个 Job，最多澄清两轮，形成 `TopicSpec` 后再执行现有 LangGraph。vNext-C0 补齐 B 站稳定 MID 身份；vNext-C 再把 v2 图拆成 Collection 与 Synthesis 两阶段，让用户在原始 Evidence 快照上逐项确认候选账号后继续同一个 Job。
 
 这不是继续调 P0-C。P0-A 带保留通过、P0-B 工程 Gate 通过、P0-C 质量 Gate 失败并冻结、P0-D/P0-E 未开始。vNext 不修改 P0-C 的账号资格、评分、权重、排序、Provider、私有证据、Bundle 或归档分支。
 
@@ -14,8 +14,8 @@ vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄�
 | PostgreSQL 持久暂停/恢复 | 已实现 |
 | TopicSpec 传入现有分析图 | 已实现 |
 | P0-C 账号质量调优 | 不做 |
-| 稳定账号身份上游契约 | vNext-C0 Gate 候选 |
-| 候选账号人工确认 | 不做，属于 vNext-C |
+| 稳定账号身份上游契约 | vNext-C0 已完成 |
+| 候选账号人工确认 | vNext-C 已实现，当前 Gate Review |
 | 新竞争情报报告模板 | 不做，沿用现有报告链路 |
 | 极简前端回答表单 | 已实现 |
 | 复杂对话 UI 或视觉重构 | 不做 |
@@ -56,12 +56,15 @@ stateDiagram-v2
     running --> waiting_user: 需要澄清且轮次小于等于 2
     waiting_user --> pending: 回答成功并重新入队
     waiting_user --> cancelled: 用户取消
+    running --> waiting_candidate_confirmation: Collection 快照与候选已持久化
+    waiting_candidate_confirmation --> pending: 用户逐项确认并重新入队
+    waiting_candidate_confirmation --> cancelled: 用户取消
     running --> completed: 报告完成
     running --> partial: 证据不足但保留结果
     running --> failed: 不可恢复错误或重试耗尽
 ```
 
-`waiting_user` 表示 Worker 已正常结束且正在等待用户输入，不是失败，也不触发 Arq 自动 Retry。普通 retry 不接受 `waiting_user`，被取消但仍有待回答问题的 Job 也不能绕过澄清直接重试。
+`waiting_user` 和 `waiting_candidate_confirmation` 都表示 Worker 已正常结束且正在等待用户输入，不是失败，也不触发 Arq 自动 Retry。普通 retry 不接受这两个状态；候选等待状态可取消、可创建范围修订，并由服务端返回 `can_confirm_candidates=true`。
 
 澄清回答与普通 retry 都先在数据库事务中锁定并校验 Job，再提交回答、`pending`、新 `execution_version` 和事件；只有提交成功后才调用 Redis/Arq enqueue。队列失败时用新事务把同一执行版本从 `pending` 转为 `failed / WORKER_FAILED` 并记录失败事件，不会静默留下没有队列任务的 `pending`。已回答的 clarification 保持 `answered`，随后可通过普通 retry 生成新执行版本恢复。
 
@@ -101,6 +104,8 @@ Brief Validator 的外部 LLM await 不长期持有或信任旧 ORM Job。LLM �
 ## 功能开关与回退
 
 `ENABLE_INTERACTIVE_BRIEF=false` 为默认值，App 与 Worker 在 Compose 中接收同一配置。关闭时，`POST /jobs` 仍立即入队，Worker 直接进入原有 LangGraph，不调用 Brief Validator，也不改变 Planner、Researcher、Analyst、Writer 或 Researcher 微调模型路由。
+
+`ENABLE_CANDIDATE_CONFIRMATION=false` 也是独立默认关闭开关，App 与 Worker 使用同一值，并要求 `GRAPH_VERSION=v2`。关闭时继续运行 C0 与 vNext-A/B 的既有完整图；开启时才使用 Collection / Synthesis 两阶段。修改开关需要重建 App 与 Worker 进程，不要求运行时热切换，也不改变 `USE_FINETUNED_MODEL` 的 Researcher 路由语义。
 
 ## vNext-B 冻结设计
 
@@ -161,16 +166,55 @@ vNext-C0 是 vNext-C 之前的独立先决条件，只修复 `search_videos` 到
 
 C0 没有新增数据库 Schema、Migration、API、状态、功能开关或前端。它不生成 `candidate_id`，不宣称账号是竞品，不调用额外 B 站接口，也不证明候选质量。完整验证见 `docs/interactive-intelligence-vnext-c0-validation-20260725.md`。
 
+## vNext-C 候选账号人工确认闭环
+
+### 最小真实身份 Canary
+
+实施前只对既有公开 B 站入口进行一次受限 Canary：1 个公开 HTTP 请求，最多读取 10 条结果；10/10 包含合法 MID，10/10 可生成规范主页，BVID、标题和 URL 完整率均为 100%，Provider 正常且无错误。没有使用 Cookie、登录、代理、浏览器指纹或风控绕过；LLM、MCP、UAPI、ASR 调用均为 0，费用为 0。只记录聚合统计，没有输出或保存真实 MID、账号名、标题或完整响应。
+
+### Collection / Synthesis 分阶段图
+
+`build_collection_graph_v2()` 和 `build_synthesis_graph_v2()` 复用现有节点函数，不复制 Agent 实现：
+
+- Collection：Entry → Planner → Researcher → Evidence Gate → 候选提取 → PostgreSQL 快照 → `waiting_candidate_confirmation`。
+- Synthesis：从 PostgreSQL 校验并恢复原快照 → 只筛选 confirmed Evidence → Analyst → Writer → 现有 Claim / Evidence / 报告校验与持久化。
+
+Synthesis 图不包含 Entry、Planner、Researcher 或 Evidence Gate；候选确认后的 Worker 也不再调用 Brief Validator、搜索、MCP、UAPI 或 ASR。恢复不依赖进程内 `MemorySaver`，并使用新的 `execution_version` 与 `candidate_synthesis_runs` 绑定本次决策。
+
+### 候选身份、排序与快照
+
+- `candidate_id` 为 `cand_` 加 `sha256("bilibili|mid:{mid}")` 的前 24 位十六进制摘要。
+- 只接受 C0 的合法 `platform_account_id`；同 MID 合并，同名不同 MID 分离，无 MID 不生成候选。
+- 排序依次为匹配 Evidence 数降序、首次 Evidence 出现顺序、MID 稳定排序，最多 8 个。
+- `display_name` 只展示；`why_surfaced` 只说明搜索样本来源，不宣称候选必然是竞品。
+- `collection_snapshots` 保存 TopicSpec、计划、最小 raw data、Evidence、工具结果、查询和采集用量；`candidate_snapshots` 与候选行保存有限投影和稳定哈希。
+- 快照按 `job_id + source_execution_version` 唯一且不可变；用户决策保存在独立 decision batch/rows 中，不覆盖系统候选事实。
+
+Migration `20260725_0004_candidate_confirmation.py` 新增 `collection_snapshots`、`candidate_snapshots`、`candidate_accounts`、`candidate_decision_batches`、`candidate_decisions`、`candidate_synthesis_runs`，并把 `analysis_jobs.status` 从 `varchar(20)` 扩为 `varchar(40)`。Job 删除只级联自己的快照；范围修订产生新 Job，不继承旧候选决策作为真值。
+
+### API、幂等与能力
+
+- `GET /jobs/{job_id}/candidates`：只返回最多 8 个候选的有限投影、TopicSpec 摘要、当前 decision、快照版本/哈希和 `can_submit`。
+- `POST /jobs/{job_id}/candidates/decisions`：要求当前用户拥有 Job 与快照，所有候选必须各选一次，至少一个 confirmed，不接受 undecided、未知或重复 ID，reason 最长 200 字，请求体上限 16 KiB。
+- 同一 `request_id` 和同一规范化 payload 幂等返回，不增加执行版本或重复入队；同一 `request_id` 的不同内容返回 409。首次接受时事务内保存决策、增加 `execution_version`、清除旧 `arq_job_id`、写入 `dispatch_pending_at`，提交后再 enqueue；派发失败保留 reconciliation 意图。
+- `can_retry=false`、`can_revise=true`、`can_confirm_candidates=true` 由服务端状态计算，前端只消费能力。
+
+### 报告边界
+
+Synthesis 重新计算并校验采集哈希、候选哈希和决策哈希。confirmed 候选对应的视频 Evidence 与同源 Transcript Evidence 才会交给 Analyst / Writer；excluded 不进入正常竞品结论；uncertain 只进入确定性的“未纳入或待确认范围”。最终报告明确披露候选来自系统检索、纳入由用户确认、结论只适用于本次公开 Evidence 快照，以及用户确认不等于模型准确率或市场覆盖。
+
+完整工程、Migration、浏览器与安全验证见 `docs/interactive-intelligence-vnext-c-validation-20260725.md`。
+
 ## 已完成与未完成
 
-vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已补齐稳定账号身份数据契约，当前停在独立 Gate Review。
+vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已补齐稳定账号身份数据契约。vNext-C 已完成候选提取、不可变快照、用户逐项确认、同 Job 恢复与 confirmed-only Synthesis 的工程闭环，当前停在 Gate Review。
 
-PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。C0 没有真实收费 canary，没有证明候选账号选择质量提升；P0-C 继续失败冻结。候选账号快照、人工确认、暂停恢复、候选质量验证、新报告模板和生产部署仍未完成。
+PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。vNext-C Canary 只证明当前公开入口能返回稳定 MID，用户确认闭环只证明工程边界和可恢复性；它没有证明自动候选质量提升、模型准确率、稳定 Top 5、完整行业覆盖或生产部署。P0-C 继续失败冻结。
 
 ## 后续阶段
 
 - vNext-B：已完成并作为 C0 基线冻结。
-- vNext-C0：稳定账号身份数据契约，当前 Gate Review。
-- vNext-C：候选账号人工确认闭环，尚未开始；不得由 C0 自动进入。
-- vNext-D：竞争情报报告交互与证据体验。
+- vNext-C0：稳定账号身份数据契约，已完成并作为 C 基线。
+- vNext-C：候选账号人工确认闭环，当前 Gate Review。
+- vNext-D：竞争情报报告交互与证据体验，未开始；不得由 C 自动进入。
 - vNext-E：端到端 Gate、真实边界验证和面试材料统一同步。

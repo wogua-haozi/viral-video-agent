@@ -41,4 +41,11 @@ ERROR_MESSAGES = {
     "JOB_REVISION_INVALID": "当前任务仍在执行，请先取消后再修改研究范围。",
     "JOB_REVISION_CONFLICT": "该修订请求与已存在的任务不一致。",
     "JOB_HAS_REVISIONS": "该任务已有修订记录，不能删除审计来源。",
+    "CANDIDATE_SNAPSHOT_NOT_FOUND": "候选快照不存在或已过期。",
+    "CANDIDATE_DECISION_INVALID": "候选确认内容不完整或无效。",
+    "CANDIDATE_DECISION_CONFLICT": "该候选确认请求已用不同内容提交。",
+    "CANDIDATE_DECISION_ALREADY_SUBMITTED": "该候选快照已经完成确认。",
+    "CANDIDATE_EVIDENCE_INSUFFICIENT": "当前 Evidence 中没有足够的稳定账号身份，无法进入候选确认。",
+    "CANDIDATE_SNAPSHOT_INVALID": "候选快照校验失败，未继续生成报告。",
+    "REQUEST_BODY_TOO_LARGE": "候选确认请求体过大。",
 }

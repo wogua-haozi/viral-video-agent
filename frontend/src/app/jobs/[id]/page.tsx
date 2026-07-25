@@ -5,9 +5,10 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, PencilLine, RotateCcw, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { CandidateConfirmation } from '@/components/CandidateConfirmation';
 import { JobProgress } from '@/components/product';
 import { Button, Card, ErrorState, LoadingState, StatusBadge, Textarea } from '@/components/ui';
-import { answerJobClarification, cancelJob, getJob, getJobClarification, getJobEvents, readableError, retryJob, reviseJob, type ClarificationRequest, type Job, type JobEvent } from '@/lib/api';
+import { answerJobClarification, cancelJob, getJob, getJobCandidates, getJobClarification, getJobEvents, readableError, retryJob, reviseJob, type CandidateSnapshot, type ClarificationRequest, type Job, type JobEvent } from '@/lib/api';
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +19,7 @@ export default function JobPage() {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [clarification, setClarification] = useState<ClarificationRequest | null>(null);
   const [clarificationHistory, setClarificationHistory] = useState<ClarificationRequest[]>([]);
+  const [candidateSnapshot, setCandidateSnapshot] = useState<CandidateSnapshot | null>(null);
   const [selectedOption, setSelectedOption] = useState('');
   const [customAnswer, setCustomAnswer] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -40,6 +42,8 @@ export default function JobPage() {
       const clarificationData = jobData.clarification_round > 0 ? await getJobClarification(id) : null;
       setClarification(jobData.status === 'waiting_user' ? clarificationData?.current || null : null);
       setClarificationHistory(clarificationData?.history || []);
+      if (jobData.status === 'waiting_candidate_confirmation') setCandidateSnapshot(await getJobCandidates(id));
+      else setCandidateSnapshot(null);
       if (revisionMode) {
         setShowRevision(true);
         setRevisionQuery((current) => current || jobData.query);
@@ -116,7 +120,7 @@ export default function JobPage() {
             <Link href="/history" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="h-4 w-4" aria-hidden="true" />返回任务列表</Link>
             <div className="mt-4 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-start">
               <div className="min-w-0"><p className="eyebrow">Live job / {job.id.slice(0, 6)}</p><h1 className="break-content title-balance mt-2 text-2xl font-black tracking-[-.035em] sm:text-3xl">{job.query}</h1><div className="mt-4 flex flex-wrap items-center gap-3"><StatusBadge status={job.status} /><span className="font-mono text-xs tabular-nums text-muted-foreground">进度 {job.progress}%</span><span className="text-xs text-muted-foreground">B站 · {job.analysis_mode === 'deep' ? '内容深度分析' : '标准分析'}</span></div></div>
-              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user'].includes(job.status) && <Button variant="danger" size="sm" onClick={cancel}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重新分析</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}</p>}</div>
+              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="danger" size="sm" onClick={cancel}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重新分析</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}</p>}</div>
             </div>
 
             {job.revision_of_job_id && <p className="mt-4 text-sm text-muted-foreground">修订自 <Link href={`/jobs/${job.revision_of_job_id}`} className="font-mono font-semibold text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{job.revision_of_job_id.slice(0, 8)}</Link></p>}
@@ -150,6 +154,10 @@ export default function JobPage() {
                 {answerError && <p className="mt-2 text-sm text-destructive" role="alert">{answerError}</p>}
                 <Button className="mt-3" onClick={answer} isLoading={submitting} disabled={!selectedOption && !customAnswer.trim()}>提交并继续</Button>
               </Card>
+            )}
+
+            {job.status === 'waiting_candidate_confirmation' && job.can_confirm_candidates && candidateSnapshot && (
+              <CandidateConfirmation key={candidateSnapshot.snapshot_id} jobId={job.id} snapshot={candidateSnapshot} onSubmitted={load} />
             )}
 
             {clarificationHistory.length > 0 && (

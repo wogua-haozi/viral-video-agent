@@ -19,13 +19,20 @@ const items = [
 
 function ThemeButton() {
   const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const isDark = mounted && resolvedTheme === 'dark';
   return (
     <Button
       variant="ghost"
       size="sm"
       className="relative w-11 px-0"
-      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-      aria-label={resolvedTheme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      aria-label={mounted ? (isDark ? '切换到浅色主题' : '切换到深色主题') : '切换主题'}
     >
       <Sun className="h-4 w-4 scale-100 transition-transform dark:scale-0" aria-hidden="true" />
       <Moon className="absolute h-4 w-4 scale-0 transition-transform dark:scale-100" aria-hidden="true" />

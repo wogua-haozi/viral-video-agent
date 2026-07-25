@@ -33,7 +33,7 @@ class AnalysisJob(Base):
     query: Mapped[str] = mapped_column(Text)
     platforms: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["bilibili"])
     analysis_mode: Mapped[str] = mapped_column(String(20), default="standard")
-    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     clarification_round: Mapped[int] = mapped_column(Integer, default=0)
@@ -53,6 +53,8 @@ class AnalysisJob(Base):
     reports: Mapped[list["Report"]] = relationship(back_populates="job", cascade="all, delete-orphan")
     evidence_items: Mapped[list["EvidenceItem"]] = relationship(back_populates="job", cascade="all, delete-orphan")
     clarifications: Mapped[list["JobClarification"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    collection_snapshots: Mapped[list["CollectionSnapshot"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    candidate_snapshots: Mapped[list["CandidateSnapshot"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
     @property
     def report_id(self) -> uuid.UUID | None:
@@ -66,7 +68,11 @@ class AnalysisJob(Base):
 
     @property
     def can_revise(self) -> bool:
-        return self.status in {"waiting_user", "failed", "cancelled", "completed", "partial"}
+        return self.status in {"waiting_user", "waiting_candidate_confirmation", "failed", "cancelled", "completed", "partial"}
+
+    @property
+    def can_confirm_candidates(self) -> bool:
+        return self.status == "waiting_candidate_confirmation"
 
 
 class Report(Base):
@@ -174,3 +180,125 @@ class JobClarification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     job: Mapped[AnalysisJob] = relationship(back_populates="clarifications")
+
+
+class CollectionSnapshot(Base):
+    __tablename__ = "collection_snapshots"
+    __table_args__ = (
+        UniqueConstraint("job_id", "source_execution_version", name="uq_collection_snapshot_job_execution"),
+        Index("ix_collection_snapshots_job_execution", "job_id", "source_execution_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analysis_jobs.id", ondelete="CASCADE"), nullable=False)
+    source_execution_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    topic_spec: Mapped[dict] = mapped_column(JSON, nullable=False)
+    plan: Mapped[list] = mapped_column(JSON, nullable=False)
+    raw_data: Mapped[list] = mapped_column(JSON, nullable=False)
+    evidence: Mapped[list] = mapped_column(JSON, nullable=False)
+    tool_results: Mapped[list] = mapped_column(JSON, nullable=False)
+    search_queries_used: Mapped[list] = mapped_column(JSON, nullable=False)
+    collection_usage: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    job: Mapped[AnalysisJob] = relationship(back_populates="collection_snapshots")
+    candidate_snapshot: Mapped["CandidateSnapshot | None"] = relationship(back_populates="collection_snapshot", cascade="all, delete-orphan", uselist=False)
+
+
+class CandidateSnapshot(Base):
+    __tablename__ = "candidate_snapshots"
+    __table_args__ = (
+        UniqueConstraint("collection_snapshot_id", name="uq_candidate_snapshot_collection"),
+        UniqueConstraint("job_id", "source_execution_version", name="uq_candidate_snapshot_job_execution"),
+        Index("ix_candidate_snapshots_job_execution", "job_id", "source_execution_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    collection_snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("collection_snapshots.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analysis_jobs.id", ondelete="CASCADE"), nullable=False)
+    source_execution_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    topic_summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    max_candidates: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    job: Mapped[AnalysisJob] = relationship(back_populates="candidate_snapshots")
+    collection_snapshot: Mapped[CollectionSnapshot] = relationship(back_populates="candidate_snapshot")
+    candidates: Mapped[list["CandidateAccount"]] = relationship(back_populates="snapshot", cascade="all, delete-orphan", order_by="CandidateAccount.sort_order")
+    decision_batch: Mapped["CandidateDecisionBatch | None"] = relationship(back_populates="snapshot", cascade="all, delete-orphan", uselist=False)
+
+
+class CandidateAccount(Base):
+    __tablename__ = "candidate_accounts"
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "candidate_id", name="uq_candidate_account_snapshot_candidate"),
+        UniqueConstraint("snapshot_id", "platform", "platform_account_id", name="uq_candidate_account_snapshot_identity"),
+        Index("ix_candidate_accounts_snapshot_order", "snapshot_id", "sort_order"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_snapshots.id", ondelete="CASCADE"), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False)
+    platform_account_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    profile_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_evidence_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    matched_video_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    sample_titles: Mapped[list] = mapped_column(JSON, nullable=False)
+    evidence_links: Mapped[list] = mapped_column(JSON, nullable=False)
+    why_surfaced: Mapped[list] = mapped_column(JSON, nullable=False)
+    identity_confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot: Mapped[CandidateSnapshot] = relationship(back_populates="candidates")
+    decisions: Mapped[list["CandidateDecision"]] = relationship(back_populates="candidate", cascade="all, delete-orphan")
+
+
+class CandidateDecisionBatch(Base):
+    __tablename__ = "candidate_decision_batches"
+    __table_args__ = (
+        UniqueConstraint("request_id", name="uq_candidate_decision_batches_request_id"),
+        UniqueConstraint("snapshot_id", name="uq_candidate_decision_batches_snapshot_id"),
+        Index("ix_candidate_decision_batches_job_id", "job_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    request_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_snapshots.id", ondelete="CASCADE"), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analysis_jobs.id", ondelete="CASCADE"), nullable=False)
+    submitted_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    snapshot: Mapped[CandidateSnapshot] = relationship(back_populates="decision_batch")
+    decisions: Mapped[list["CandidateDecision"]] = relationship(back_populates="batch", cascade="all, delete-orphan")
+    synthesis_runs: Mapped[list["CandidateSynthesisRun"]] = relationship(back_populates="decision_batch", cascade="all, delete-orphan")
+
+
+class CandidateDecision(Base):
+    __tablename__ = "candidate_decisions"
+    __table_args__ = (UniqueConstraint("batch_id", "candidate_account_id", name="uq_candidate_decision_batch_candidate"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_decision_batches.id", ondelete="CASCADE"), nullable=False)
+    candidate_account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_accounts.id", ondelete="CASCADE"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    batch: Mapped[CandidateDecisionBatch] = relationship(back_populates="decisions")
+    candidate: Mapped[CandidateAccount] = relationship(back_populates="decisions")
+
+
+class CandidateSynthesisRun(Base):
+    __tablename__ = "candidate_synthesis_runs"
+    __table_args__ = (
+        UniqueConstraint("job_id", "execution_version", name="uq_candidate_synthesis_run_job_execution"),
+        Index("ix_candidate_synthesis_runs_job_execution", "job_id", "execution_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analysis_jobs.id", ondelete="CASCADE"), nullable=False)
+    decision_batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidate_decision_batches.id", ondelete="CASCADE"), nullable=False)
+    execution_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    decision_batch: Mapped[CandidateDecisionBatch] = relationship(back_populates="synthesis_runs")

@@ -369,3 +369,34 @@ def build_graph_v2():
     graph.add_conditional_edges("writer", route_writer, {"writer": "writer", "end": END})
 
     return graph.compile(checkpointer=get_checkpointer())
+
+
+def build_collection_graph_v2():
+    """Run the existing v2 collection nodes and stop at the Evidence Gate."""
+    graph = StateGraph(AgentState)
+    graph.add_node("entry", entry_node)
+    graph.add_node("planner_v2", planner_v2_node)
+    graph.add_node("researcher_v2", researcher_v2_node)
+    graph.add_node("evidence_gate", evidence_gate_node)
+
+    graph.add_edge(START, "entry")
+    graph.add_conditional_edges("entry", route_entry, {"planner_v2": "planner_v2", "end": END})
+    graph.add_edge("planner_v2", "researcher_v2")
+    graph.add_conditional_edges(
+        "researcher_v2",
+        route_research,
+        {"researcher_v2": "researcher_v2", "evidence_gate": "evidence_gate"},
+    )
+    graph.add_edge("evidence_gate", END)
+    return graph.compile()
+
+
+def build_synthesis_graph_v2():
+    """Run the existing Analyst and Writer nodes from a durable snapshot state."""
+    graph = StateGraph(AgentState)
+    graph.add_node("analyst", analyst_node)
+    graph.add_node("writer", writer_node)
+    graph.add_edge(START, "analyst")
+    graph.add_conditional_edges("analyst", route_analyst, {"analyst": "analyst", "writer": "writer"})
+    graph.add_conditional_edges("writer", route_writer, {"writer": "writer", "end": END})
+    return graph.compile()

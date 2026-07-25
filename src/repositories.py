@@ -5,7 +5,20 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.db.models import AnalysisJob, EvidenceItem, JobClarification, JobEvent, Report, ReportFeedback, ShareLink, UsageRecord, User
+from src.db.models import (
+    AnalysisJob,
+    CandidateDecisionBatch,
+    CandidateSnapshot,
+    CandidateSynthesisRun,
+    EvidenceItem,
+    JobClarification,
+    JobEvent,
+    Report,
+    ReportFeedback,
+    ShareLink,
+    UsageRecord,
+    User,
+)
 
 
 class UserRepository:
@@ -82,6 +95,9 @@ class JobRepository:
         await self.db.execute(delete(EvidenceItem).where(EvidenceItem.job_id == job_id))
         await self.db.execute(delete(UsageRecord).where(UsageRecord.job_id == job_id))
         await self.db.execute(delete(Report).where(Report.job_id == job_id))
+    async def clear_report_outputs(self, job_id: uuid.UUID) -> None:
+        await self.db.execute(delete(EvidenceItem).where(EvidenceItem.job_id == job_id))
+        await self.db.execute(delete(Report).where(Report.job_id == job_id))
     async def add_event(self, job_id: uuid.UUID, event_type: str, message: str, progress: int, level: str = "info") -> JobEvent:
         event = JobEvent(job_id=job_id, event_type=event_type, message=message, progress=progress, level=level); self.db.add(event); await self.db.commit(); return event
     async def events(self, job_id: uuid.UUID) -> list[JobEvent]: return list((await self.db.scalars(select(JobEvent).where(JobEvent.job_id == job_id).order_by(JobEvent.created_at))).all())
@@ -91,6 +107,86 @@ class JobRepository:
         return await self.db.scalar(select(JobClarification).where(JobClarification.job_id == job_id, JobClarification.request_id == request_id))
     async def clarification_by_request_for_update(self, job_id: uuid.UUID, request_id: uuid.UUID) -> JobClarification | None:
         return await self.db.scalar(select(JobClarification).where(JobClarification.job_id == job_id, JobClarification.request_id == request_id).execution_options(populate_existing=True).with_for_update())
+
+
+class CandidateRepository:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    @staticmethod
+    def _snapshot_options():
+        return (
+            selectinload(CandidateSnapshot.collection_snapshot),
+            selectinload(CandidateSnapshot.candidates),
+            selectinload(CandidateSnapshot.decision_batch)
+            .selectinload(CandidateDecisionBatch.decisions),
+        )
+
+    async def get_owned_snapshot(
+        self,
+        snapshot_id: uuid.UUID,
+        job_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> CandidateSnapshot | None:
+        return await self.db.scalar(
+            select(CandidateSnapshot)
+            .join(AnalysisJob, AnalysisJob.id == CandidateSnapshot.job_id)
+            .options(*self._snapshot_options())
+            .where(
+                CandidateSnapshot.id == snapshot_id,
+                CandidateSnapshot.job_id == job_id,
+                AnalysisJob.user_id == user_id,
+            )
+        )
+
+    async def current_owned_snapshot(self, job: AnalysisJob, user_id: uuid.UUID) -> CandidateSnapshot | None:
+        return await self.db.scalar(
+            select(CandidateSnapshot)
+            .join(AnalysisJob, AnalysisJob.id == CandidateSnapshot.job_id)
+            .options(*self._snapshot_options())
+            .where(
+                CandidateSnapshot.job_id == job.id,
+                CandidateSnapshot.source_execution_version == job.execution_version,
+                AnalysisJob.user_id == user_id,
+            )
+        )
+
+    async def decision_by_request(self, request_id: uuid.UUID) -> CandidateDecisionBatch | None:
+        return await self.db.scalar(
+            select(CandidateDecisionBatch)
+            .options(
+                selectinload(CandidateDecisionBatch.decisions),
+                selectinload(CandidateDecisionBatch.snapshot),
+            )
+            .where(CandidateDecisionBatch.request_id == request_id)
+        )
+
+    async def synthesis_run(self, job_id: uuid.UUID, execution_version: int) -> CandidateSynthesisRun | None:
+        return await self.db.scalar(
+            select(CandidateSynthesisRun)
+            .options(
+                selectinload(CandidateSynthesisRun.decision_batch)
+                .selectinload(CandidateDecisionBatch.decisions),
+                selectinload(CandidateSynthesisRun.decision_batch)
+                .selectinload(CandidateDecisionBatch.snapshot)
+                .selectinload(CandidateSnapshot.collection_snapshot),
+                selectinload(CandidateSynthesisRun.decision_batch)
+                .selectinload(CandidateDecisionBatch.snapshot)
+                .selectinload(CandidateSnapshot.candidates),
+            )
+            .where(
+                CandidateSynthesisRun.job_id == job_id,
+                CandidateSynthesisRun.execution_version == execution_version,
+            )
+        )
+
+    async def latest_decision_batch(self, job_id: uuid.UUID) -> CandidateDecisionBatch | None:
+        return await self.db.scalar(
+            select(CandidateDecisionBatch)
+            .where(CandidateDecisionBatch.job_id == job_id)
+            .order_by(CandidateDecisionBatch.submitted_at.desc())
+            .limit(1)
+        )
 class ReportRepository:
     def __init__(self, db: AsyncSession): self.db = db
     async def get_owned(self, report_id: uuid.UUID, user_id: uuid.UUID) -> Report | None:
