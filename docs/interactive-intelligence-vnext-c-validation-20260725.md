@@ -8,7 +8,7 @@
 - 开始前远端 ahead/behind：`0/0`，工作树干净。
 - 冻结分支保持：`feat/content-intelligence-p0=ca5e8b73402e1cf91a8fcb6cb719e3b3c71f6628`；`archive/p0c-architecture-failed-20260719=e224b5b5d20384b959a937f3f24841a8b398d80d`。
 - 本阶段只实现“真实 Evidence → 确定性候选 → 用户逐项确认 → 原快照 Synthesis”的工程闭环；不重新修复 P0-C，不进入 vNext-D、P0-D 或 P0-E。
-- 最终提交、远端 SHA、ahead/behind 和工作树状态以本次 Gate 汇报为准。
+- 总控已复核通过的功能基线为 `b3ddbad0184cb1c849b149bf2beba09299c6f2f5`；vNext-C 工程 Gate 已正式通过并冻结。本次只追加最终状态文档，提交、远端 SHA、ahead/behind 和工作树状态以冻结汇报为准。
 
 ### Gate 阻塞修复追加轮次
 
@@ -205,8 +205,8 @@ Synthesis 恢复时重新计算并核对 Collection 哈希、Candidate 哈希和
 - Canary 只证明稳定 MID 可读；用户入口组合测试只证明两字符主题能通过真实 API 和澄清服务进入真实 Collection。工程 Gate 不证明候选质量提升、自动竞品识别、模型准确率、真实用户价值、生产 SLA 或 P0-C 成功。
 - P0-C 质量 Gate 继续失败冻结；P0-D/P0-E 未开始；vNext-D 未开始。
 
-## Gate 结论
+## 正式 Gate 结论与冻结
 
-vNext-C 工程闭环 Gate 阻塞修复候选通过，等待总控复核。当前证据证明：两字符主题可通过真实创建 API，真实澄清 Service 和回答 API 能恢复同一 Job，经过严格校验的 TopicSpec 能接管真实 Collection Entry 路由，裁剪后的 query 保持语义可审计；候选来自真实公开 Evidence 的稳定 MID；采集与确认可跨数据库会话恢复；用户确认后不重复采集；excluded/uncertain 不会进入正常分析；权限、执行版本、哈希和幂等边界成立；完整回归通过。
+vNext-C engineering Gate passed and frozen。总控已正式确认：两字符主题可通过真实创建 API，真实澄清 Service 和回答 API 能恢复同一 Job，经过严格校验的 TopicSpec 能接管真实 Collection Entry 路由，裁剪后的 query 保持语义可审计；候选来自真实公开 Evidence 的稳定 MID；采集与确认可跨数据库会话恢复；用户确认后不重复采集；excluded/uncertain 不会进入正常分析；权限、执行版本、哈希和幂等边界成立。vNext-C0 和 vNext-C 均已完成工程验证，vNext-C 不再继续修改。
 
-必须停在 vNext-C Gate Review。该结论不代表候选质量、P0-C 或生产部署通过，不得自动进入 vNext-D。
+该 Gate 只证明工程闭环、持久恢复、身份稳定性和人机确认边界；不证明候选账号自动选择质量提升，不证明模型准确率、稳定 Top 5、完整行业覆盖或生产 SLA。真实 B 站 Canary 只证明当前公开入口可返回稳定 MID；用户确认不等于无偏模型评测；PostgreSQL 业务状态机不等于 LangGraph 原生 interrupt/resume。P0-C 质量 Gate 仍失败并冻结，P0-D/P0-E 未开始。vNext-D 尚未开始，必须由独立任务和明确授权启动。

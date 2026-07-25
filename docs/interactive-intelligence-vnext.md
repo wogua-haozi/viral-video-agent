@@ -15,7 +15,7 @@ vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄�
 | TopicSpec 传入现有分析图 | 已实现 |
 | P0-C 账号质量调优 | 不做 |
 | 稳定账号身份上游契约 | vNext-C0 已完成 |
-| 候选账号人工确认 | vNext-C 已实现，当前 Gate Review |
+| 候选账号人工确认 | vNext-C 工程 Gate 已通过并冻结 |
 | 新竞争情报报告模板 | 不做，沿用现有报告链路 |
 | 极简前端回答表单 | 已实现 |
 | 复杂对话 UI 或视觉重构 | 不做 |
@@ -217,14 +217,14 @@ Synthesis 重新计算并校验采集哈希、候选哈希和决策哈希。conf
 
 ## 已完成与未完成
 
-vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已补齐稳定账号身份数据契约。vNext-C 已完成候选提取、不可变快照、用户逐项确认、同 Job 恢复与 confirmed-only Synthesis 的工程闭环，当前停在 Gate Review。
+vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已完成稳定账号身份数据契约的工程验证。vNext-C 已完成候选提取、不可变快照、用户逐项确认、同 Job 恢复与 confirmed-only Synthesis 的工程闭环，工程 Gate 已通过并冻结，不再继续修改。
 
 PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。vNext-C Canary 只证明当前公开入口能返回稳定 MID，用户确认闭环只证明工程边界和可恢复性；用户入口组合测试只证明短主题能经澄清到达真实 Collection。它没有证明自动候选质量提升、模型准确率、稳定 Top 5、完整行业覆盖或生产部署。P0-C 继续失败冻结。
 
 ## 后续阶段
 
 - vNext-B：已完成并作为 C0 基线冻结。
-- vNext-C0：稳定账号身份数据契约，已完成并作为 C 基线。
-- vNext-C：候选账号人工确认闭环，当前 Gate Review。
-- vNext-D：竞争情报报告交互与证据体验，未开始；不得由 C 自动进入。
+- vNext-C0：稳定账号身份数据契约，已完成工程验证并作为 C 基线冻结。
+- vNext-C：候选账号人工确认闭环，工程 Gate 已通过并冻结。
+- vNext-D：竞争情报报告交互与证据体验，尚未开始；需要独立任务和明确授权，不得由 C 自动进入。
 - vNext-E：端到端 Gate、真实边界验证和面试材料统一同步。

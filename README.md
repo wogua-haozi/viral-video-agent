@@ -221,7 +221,7 @@ vNext-C 由独立默认关闭开关 `ENABLE_CANDIDATE_CONFIRMATION=false` 控制
 
 候选按匹配 Evidence 数降序、首次 Evidence 顺序、MID 稳定排序；`candidate_id` 由 `sha256("bilibili|mid:{mid}")` 确定性生成。同 MID 合并，同名不同 MID 分离，无合法 MID 的视频可以保留为 Evidence，但不会生成候选。最终报告只把 confirmed 对应 Evidence 交给 Analyst / Writer，uncertain 只进入“未纳入或待确认范围”，excluded 不进入正常竞品结论。
 
-详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md)、[vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md) 与 [vNext-C 验证](docs/interactive-intelligence-vnext-c-validation-20260725.md)。P0-C 质量 Gate 仍失败并冻结；vNext-C 当前停在 Gate Review，vNext-D、P0-D/P0-E 未开始。
+详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md)、[vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md) 与 [vNext-C 验证](docs/interactive-intelligence-vnext-c-validation-20260725.md)。vNext-C0 和 vNext-C 均已完成工程验证，vNext-C engineering Gate passed and frozen，不再继续修改；vNext-D 尚未开始，必须由独立任务明确授权。P0-C 质量 Gate 仍失败并冻结，P0-D/P0-E 未开始。
 
 Job 响应提供服务端计算的 `can_retry` / `can_revise` / `can_confirm_candidates`。前端不再仅凭状态猜测操作；等待候选确认时不可普通 retry、可取消和修改范围，只有服务端允许时才显示候选提交入口。
 
@@ -292,7 +292,7 @@ cd ..
 docker compose config --quiet
 ```
 
-当前 vNext-C Gate 阻塞修复候选：完整 Python pytest 为 146 passed。入口/路由测试共 16 条，其中新增真实 API → Brief Service → clarification API → Worker → Collection Graph 组合链路，以及 JobCreate/JobRevisionCreate 的两字符、去空白和非法边界；原 vNext-C 18、C0 15、vNext-A 14、vNext-B 21 条回归继续通过。前端 lint 与生产 build、Python compile、Compose config、PostgreSQL 16 migration 往返和 `git diff --check` 均通过。完整结果见 [vNext-C 验证记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)。
+vNext-C 工程 Gate 已正式通过并冻结。冻结验证证据包括完整 Python pytest 146 passed；入口/路由测试 16 条，覆盖真实 API → Brief Service → clarification API → Worker → Collection Graph 组合链路，以及 JobCreate/JobRevisionCreate 的两字符、去空白和非法边界；原 vNext-C 18、C0 15、vNext-A 14、vNext-B 21 条回归通过。前端 lint 与生产 build、Python compile、Compose config、PostgreSQL 16 migration 往返和 `git diff --check` 均通过。完整结果见 [vNext-C 验证记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)。
 
 ### 真实 API 冒烟（2026-07-13）
 
