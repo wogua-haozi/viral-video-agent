@@ -175,7 +175,11 @@ def _build_evidence_items(tool_name: str, params: dict, data: list) -> tuple[lis
     normalized_data, evidence_items = [], []
     fetched_at = datetime.now(timezone.utc).isoformat()
     source_type = {"search_videos": "bilibili_video", "rag_search": "knowledge_base", "get_transcript": "transcript", "get_trend_data": "trend_data"}.get(tool_name, "tool_result")
-    data_field_names = {"bvid", "author", "view", "danmaku", "reply", "favorite", "coin", "share", "like", "duration", "pubdate", "aid"}
+    data_field_names = {
+        "bvid", "author", "platform_account_id", "display_name", "profile_url",
+        "view", "danmaku", "reply", "favorite", "coin", "share", "like",
+        "duration", "pubdate", "aid",
+    }
     for raw_item in data:
         if not isinstance(raw_item, dict):
             continue

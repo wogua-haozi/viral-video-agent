@@ -14,6 +14,7 @@ vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄�
 | PostgreSQL 持久暂停/恢复 | 已实现 |
 | TopicSpec 传入现有分析图 | 已实现 |
 | P0-C 账号质量调优 | 不做 |
+| 稳定账号身份上游契约 | vNext-C0 Gate 候选 |
 | 候选账号人工确认 | 不做，属于 vNext-C |
 | 新竞争情报报告模板 | 不做，沿用现有报告链路 |
 | 极简前端回答表单 | 已实现 |
@@ -136,15 +137,40 @@ Worker 每分钟执行一次有限批量扫描，只租约超过安全阈值的 
 - 审计事件增加 `scope_revision_created`、`scope_revision_started`、`dispatch_recovery_started`、`dispatch_recovered`、`dispatch_recovery_failed`。
 - `DISPATCH_RECONCILE_MIN_AGE_SECONDS` 默认 60 秒，`DISPATCH_RECONCILE_BATCH_SIZE` 默认 50；Worker 每分钟扫描一次，不忙等待。
 
+## vNext-C0 稳定账号身份数据契约
+
+vNext-C0 是 vNext-C 之前的独立先决条件，只修复 `search_videos` 到 raw data / Evidence 的账号身份丢失，不实现候选生成或人工确认。
+
+每条解析后的 B 站视频新增：
+
+```json
+{
+  "platform_account_id": "12345",
+  "display_name": "账号显示名称",
+  "profile_url": "https://space.bilibili.com/12345"
+}
+```
+
+- `platform_account_id` 只接受 B 站响应 `owner.mid` 中可规范化的正整数；整数、纯 ASCII 数字字符串和前导零字符串统一为无前导零字符串。
+- `profile_url` 必须由合法 MID 确定性生成，且严格等于 `https://space.bilibili.com/{mid}`。
+- `display_name` 只用于展示；不能用作唯一身份，不能用于同名账号合并，也不能在缺少 MID 时拼接或猜测主页。
+- 缺失、零、负数、布尔值、浮点数或含非数字字符的 MID 均产生 `platform_account_id=null`、`profile_url=null`。
+- `BilibiliAccountIdentity` 使用 Pydantic strict mode、`extra=forbid` 和不可变模型；主页与 MID 不匹配时拒绝。
+- 现有 `author` 保留并等于 `display_name`，避免破坏 Analyst、Writer 和既有调用者。
+- 三个身份字段进入搜索 raw data，并进入 Evidence `data_fields` 的有限投影；Evidence ID 仍由视频来源身份确定，不因账号显示名变化而变化。
+
+C0 没有新增数据库 Schema、Migration、API、状态、功能开关或前端。它不生成 `candidate_id`，不宣称账号是竞品，不调用额外 B 站接口，也不证明候选质量。完整验证见 `docs/interactive-intelligence-vnext-c0-validation-20260725.md`。
+
 ## 已完成与未完成
 
-vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口；当前只到 Gate 候选，等待总控复核。
+vNext-A 已完成严格契约、PostgreSQL 暂停/恢复、执行版本和默认关闭兼容链路。vNext-B 已完成并冻结澄清历史、创建新 Job 的范围修订、审计关系、派发 reconciliation、错误提示和极简前端入口。vNext-C0 已补齐稳定账号身份数据契约，当前停在独立 Gate Review。
 
-PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。本阶段没有真实收费 canary，没有证明候选账号选择质量提升；P0-C 继续失败冻结。复杂对话体验、候选账号确认、候选质量验证、新报告模板和生产部署仍未完成。
+PostgreSQL 业务状态机仍不等于 LangGraph 原生 interrupt/resume。C0 没有真实收费 canary，没有证明候选账号选择质量提升；P0-C 继续失败冻结。候选账号快照、人工确认、暂停恢复、候选质量验证、新报告模板和生产部署仍未完成。
 
 ## 后续阶段
 
-- vNext-B：当前 Gate 候选，等待总控复核。
-- vNext-C：候选账号人工确认闭环，尚未开始。
+- vNext-B：已完成并作为 C0 基线冻结。
+- vNext-C0：稳定账号身份数据契约，当前 Gate Review。
+- vNext-C：候选账号人工确认闭环，尚未开始；不得由 C0 自动进入。
 - vNext-D：竞争情报报告交互与证据体验。
 - vNext-E：端到端 Gate、真实边界验证和面试材料统一同步。

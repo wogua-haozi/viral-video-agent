@@ -1,4 +1,7 @@
+import re
+
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # B站分区ID映射
 CATEGORY_MAP = {
@@ -19,6 +22,58 @@ _KEYWORD_EXPANSION = {
     "搞笑": ["搞笑", "沙雕", "整活", "段子", "脱口秀"],
     "知识": ["知识", "科普", "学习", "教程", "考试", "考研"],
 }
+
+
+class BilibiliAccountIdentity(BaseModel):
+    """Stable account identity carried by every parsed Bilibili video result."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    platform_account_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$", max_length=20)
+    display_name: str = Field(default="", max_length=200)
+    profile_url: str | None = None
+
+    @model_validator(mode="after")
+    def validate_profile_url(self):
+        expected = (
+            f"https://space.bilibili.com/{self.platform_account_id}"
+            if self.platform_account_id
+            else None
+        )
+        if self.profile_url != expected:
+            raise ValueError("profile_url must be the canonical URL derived from platform_account_id")
+        return self
+
+
+def _normalize_bilibili_mid(value: object) -> str | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value) if value > 0 and len(str(value)) <= 20 else None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not re.fullmatch(r"[0-9]+", normalized):
+            return None
+        canonical = normalized.lstrip("0")
+        return canonical if canonical and len(canonical) <= 20 else None
+    return None
+
+
+def _parse_bilibili_account_identity(owner: object) -> BilibiliAccountIdentity:
+    owner_data = owner if isinstance(owner, dict) else {}
+    platform_account_id = _normalize_bilibili_mid(owner_data.get("mid"))
+    raw_name = owner_data.get("name")
+    display_name = raw_name.strip()[:200] if isinstance(raw_name, str) else ""
+    profile_url = (
+        f"https://space.bilibili.com/{platform_account_id}"
+        if platform_account_id
+        else None
+    )
+    return BilibiliAccountIdentity(
+        platform_account_id=platform_account_id,
+        display_name=display_name,
+        profile_url=profile_url,
+    )
 
 
 def _expand_keywords(keyword: str) -> list[str]:
@@ -122,6 +177,7 @@ async def search_videos(keyword: str, platforms: list[str], limit: int = 10) -> 
 
 def _parse_bilibili(item: dict) -> dict:
     stat = item.get("stat", {})
+    identity = _parse_bilibili_account_identity(item.get("owner"))
     view_count = stat.get("view", 0)
     like_count = stat.get("like", 0)
     comment_count = stat.get("reply", 0)
@@ -131,7 +187,10 @@ def _parse_bilibili(item: dict) -> dict:
         "bvid": item.get("bvid", ""),
         "aid": item.get("aid", ""),
         "title": item.get("title", ""),
-        "author": item.get("owner", {}).get("name", ""),
+        "platform_account_id": identity.platform_account_id,
+        "display_name": identity.display_name,
+        "profile_url": identity.profile_url,
+        "author": identity.display_name,
         "view": view_count,
         "views": view_count,
         "play": view_count,

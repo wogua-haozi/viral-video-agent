@@ -207,11 +207,15 @@ ASR_MAX_VIDEOS=5
 
 ## 后台任务 API
 
-### 交互式竞争情报 vNext-A / vNext-B（默认关闭）
+### 交互式竞争情报 vNext-A / vNext-B / vNext-C0（交互功能默认关闭）
 
 `ENABLE_INTERACTIVE_BRIEF=false`（App 与 Worker 一致）时，现有 Job 行为保持不变。开启后，模糊需求会先生成最多两轮澄清，任务进入 `waiting_user`；Job 页分开展示当前问题和已回答历史。
 
-修改研究范围会创建新 Job，并用 `revision_of_job_id` 保留审计关系，不覆盖旧回答、TopicSpec 或报告。Worker 每分钟有限批量 reconciliation 超时的 `pending + arq_job_id=null` 派发意图，复用原 `execution_version` 和确定性 Arq ID，不增加 `retry_count`。该路线不重新打开冻结的 P0-C，也不包含候选账号确认或新 UI 框架。详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md) 与 [vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md)。P0-C 质量 Gate 仍失败并冻结，vNext-C、P0-D/P0-E 未开始。
+修改研究范围会创建新 Job，并用 `revision_of_job_id` 保留审计关系，不覆盖旧回答、TopicSpec 或报告。Worker 每分钟有限批量 reconciliation 超时的 `pending + arq_job_id=null` 派发意图，复用原 `execution_version` 和确定性 Arq ID，不增加 `retry_count`。
+
+vNext-C0 只补齐 B 站搜索结果的稳定账号身份数据契约：合法 `owner.mid` 被规范化为 `platform_account_id`，并生成 `https://space.bilibili.com/{mid}` 形式的规范主页；`display_name` 仅用于展示，不能作为身份或合并依据。缺少合法 MID 时身份和主页保持 `null`，不会按账号名猜测。身份字段同时进入搜索 raw data 和 Evidence 的有限 `data_fields` 投影；现有 `author` 字段保留兼容。C0 不增加候选提取、确认 API、状态、数据库表、前端或收费调用，也没有开始 vNext-C 主阶段。
+
+详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md) 与 [vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md)。P0-C 质量 Gate 仍失败并冻结，vNext-C、P0-D/P0-E 未开始。
 
 Job 响应提供服务端计算的 `can_retry` / `can_revise`。前端不再仅凭状态猜测操作；保留 pending clarification 的 cancelled Job 不显示重试，但仍可创建范围修订。
 
@@ -280,7 +284,7 @@ cd ..
 docker compose config --quiet
 ```
 
-当前 vNext-B Gate 候选：88 条 Python 测试。vNext-A 的 14 条澄清闭环测试继续通过；vNext-B 覆盖澄清历史所有权、创建新 Job 的范围修订、审计保留、状态限制、崩溃窗口恢复、确定性 Arq ID、旧执行版本隔离和 reconciliation 幂等。完整结果见 [vNext-B 验证记录](docs/interactive-intelligence-vnext-b-validation-20260723.md)。
+当前 vNext-C0 Gate 候选：完整 Python pytest 为 112 passed。C0 新增 15 条 Fake/Mock 身份契约测试，覆盖 MID 规范化、无身份不猜测、同名不同 MID、严格 Schema、Evidence 投影和搜索入口透传；C0 + Evidence/Graph/MCP 定向回归为 34 passed。vNext-A/B 与 API、Graph、Model 回归继续包含在完整测试中。完整结果见 [vNext-C0 验证记录](docs/interactive-intelligence-vnext-c0-validation-20260725.md)。
 
 ### 真实 API 冒烟（2026-07-13）
 
