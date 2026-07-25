@@ -119,6 +119,8 @@ docker compose logs -f app worker
 - API 文档：<http://localhost:8000/docs>
 - 经 Nginx：<http://localhost>
 
+如需本地体验默认关闭的 vNext-C 澄清与候选确认闭环，请按 [vNext-C 本地演示说明](docs/vnext-c-local-demo.md) 配置开关、启动、体验和回退。
+
 数据库迁移由 `app` 启动命令自动执行，也可以手动运行：
 
 ```powershell
