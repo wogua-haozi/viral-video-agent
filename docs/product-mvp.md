@@ -44,7 +44,7 @@ Worker 使用有限重试、指数退避、总超时与 Provider 并发信号量
 
 ## 标准分析与 ASR 深度分析
 
-标准分析链路：用户提交 → 排行榜/热门池元数据与标题过滤 → RAG → LangGraph Agent 分析 → Evidence 校验 → PostgreSQL 保存报告。
+标准分析链路：用户提交 → B站公开关键词搜索（失败或空时回退排行榜/热门池）→ RAG → LangGraph Agent 分析 → Evidence 校验 → PostgreSQL 保存报告。
 
 深度分析链路：用户提交 → Worker 从本次返回样本中排除元数据已明确超过时长上限的视频，再选择最多 `ASR_MAX_VIDEOS` 个唯一的公开 B 站视频 → `yt-dlp` 提取临时音频 → `ffmpeg` 压缩为 64kbps MP3 → MiMo ASR → Transcript Evidence → Analyst/Writer 重新分析 → PostgreSQL 保存 → 临时目录自动删除。
 

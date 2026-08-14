@@ -1,4 +1,5 @@
 import re
+from html import unescape
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -92,6 +93,75 @@ def _match_keyword(video: dict, keywords: list[str]) -> bool:
     return any(kw in title for kw in keywords)
 
 
+def _clean_bilibili_title(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    return unescape(re.sub(r"<[^>]+>", "", value)).strip()
+
+
+def _bilibili_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    if isinstance(value, str):
+        normalized = value.replace(",", "").strip()
+        return int(normalized) if normalized.isdigit() else 0
+    return 0
+
+
+def _bilibili_duration_seconds(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    if not isinstance(value, str):
+        return 0
+    parts = value.strip().split(":")
+    if not parts or any(not part.isdigit() for part in parts):
+        return 0
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + int(part)
+    return seconds
+
+
+def _parse_bilibili_search_result(item: dict) -> dict:
+    identity = _parse_bilibili_account_identity({
+        "mid": item.get("mid"),
+        "name": item.get("author") or item.get("uname"),
+    })
+    bvid = str(item.get("bvid") or "").strip()
+    view_count = _bilibili_count(item.get("play"))
+    like_count = _bilibili_count(item.get("like"))
+    reply_count = _bilibili_count(item.get("review"))
+    favorite_count = _bilibili_count(item.get("favorites"))
+    return {
+        "platform": "bilibili",
+        "bvid": bvid,
+        "aid": item.get("aid", ""),
+        "title": _clean_bilibili_title(item.get("title")),
+        "platform_account_id": identity.platform_account_id,
+        "display_name": identity.display_name,
+        "profile_url": identity.profile_url,
+        "author": identity.display_name,
+        "view": view_count,
+        "views": view_count,
+        "play": view_count,
+        "like": like_count,
+        "likes": like_count,
+        "comment": reply_count,
+        "comments": reply_count,
+        "reply": reply_count,
+        "share": 0,
+        "shares": 0,
+        "coin": 0,
+        "favorite": favorite_count,
+        "duration": _bilibili_duration_seconds(item.get("duration")),
+        "url": item.get("arcurl") or (f"https://www.bilibili.com/video/{bvid}" if bvid else ""),
+    }
+
+
 async def search_douyin(keyword: str, limit: int = 10) -> list[dict]:
     """搜索抖音视频数据。TODO: 接入抖音开放平台 API"""
     print("[search] 抖音搜索暂未实现，需要接入抖音开放平台 API")
@@ -99,7 +169,7 @@ async def search_douyin(keyword: str, limit: int = 10) -> list[dict]:
 
 
 async def search_bilibili(keyword: str, limit: int = 10) -> list[dict]:
-    """搜索B站视频数据。排行榜接口 + 热门接口兜底。"""
+    """搜索B站视频数据。关键词搜索优先，排行榜与热门接口兜底。"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         "Referer": "https://www.bilibili.com",
@@ -116,6 +186,30 @@ async def search_bilibili(keyword: str, limit: int = 10) -> list[dict]:
     keywords = _expand_keywords(keyword) if keyword else []
 
     async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+        if keyword:
+            try:
+                resp = await client.get(
+                    "https://api.bilibili.com/x/web-interface/wbi/search/type",
+                    params={"search_type": "video", "keyword": keyword, "page": 1},
+                )
+                data = resp.json()
+                if data.get("code") == 0:
+                    items = data.get("data", {}).get("result", []) or []
+                    results = [
+                        _parse_bilibili_search_result(item)
+                        for item in items
+                        if isinstance(item, dict)
+                    ]
+                    results = [item for item in results if item["bvid"] and item["title"]]
+                    if results:
+                        print(f"[search] B站关键词搜索 '{keyword}' 返回 {len(results)} 条")
+                        return results[:limit]
+                    print(f"[search] B站关键词搜索 '{keyword}' 返回空，尝试排行榜")
+                else:
+                    print(f"[search] B站关键词搜索返回错误: {data.get('code')}，尝试排行榜")
+            except Exception as e:
+                print(f"[search] B站关键词搜索失败: {e}，尝试排行榜")
+
         # 尝试排行榜接口
         try:
             resp = await client.get(

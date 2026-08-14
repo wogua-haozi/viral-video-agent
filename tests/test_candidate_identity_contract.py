@@ -117,3 +117,107 @@ async def test_search_bilibili_carries_owner_mid_without_real_network(monkeypatc
 
     assert results[0]["platform_account_id"] == "54321"
     assert results[0]["profile_url"] == "https://space.bilibili.com/54321"
+
+
+@pytest.mark.asyncio
+async def test_search_bilibili_uses_keyword_search_and_normalizes_identity(monkeypatch):
+    class FakeResponse:
+        def json(self):
+            return {
+                "code": 0,
+                "data": {
+                    "result": [{
+                        "aid": 456,
+                        "bvid": "BV1search",
+                        "mid": 67890,
+                        "author": "搜索账号",
+                        "title": '<em class="keyword">AI</em>编程教程',
+                        "arcurl": "https://www.bilibili.com/video/BV1search",
+                        "play": "1,234",
+                        "like": 56,
+                        "review": 7,
+                        "favorites": 8,
+                        "duration": "01:23",
+                    }],
+                },
+            }
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, params):
+            assert url.endswith("/wbi/search/type")
+            assert params == {"search_type": "video", "keyword": "AI编程", "page": 1}
+            return FakeResponse()
+
+    monkeypatch.setattr("src.tools.search.httpx.AsyncClient", lambda **_kwargs: FakeClient())
+
+    results = await search_bilibili("AI编程", limit=1)
+
+    assert results == [{
+        "platform": "bilibili",
+        "bvid": "BV1search",
+        "aid": 456,
+        "title": "AI编程教程",
+        "platform_account_id": "67890",
+        "display_name": "搜索账号",
+        "profile_url": "https://space.bilibili.com/67890",
+        "author": "搜索账号",
+        "view": 1234,
+        "views": 1234,
+        "play": 1234,
+        "like": 56,
+        "likes": 56,
+        "comment": 7,
+        "comments": 7,
+        "reply": 7,
+        "share": 0,
+        "shares": 0,
+        "coin": 0,
+        "favorite": 8,
+        "duration": 83,
+        "url": "https://www.bilibili.com/video/BV1search",
+    }]
+
+
+@pytest.mark.asyncio
+async def test_search_bilibili_falls_back_to_ranking_when_keyword_search_fails(monkeypatch):
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, params):
+            if url.endswith("/wbi/search/type"):
+                assert params == {"search_type": "video", "keyword": "AI编程", "page": 1}
+                return FakeResponse({"code": -412, "message": "request blocked"})
+            assert url.endswith("/ranking/v2")
+            assert params == {"rid": 0, "type": "all"}
+            return FakeResponse({
+                "code": 0,
+                "data": {"list": [_video(24680, name="回退账号", bvid="BV1fallback") | {
+                    "title": "AI编程排行榜视频",
+                }]},
+            })
+
+    monkeypatch.setattr("src.tools.search.httpx.AsyncClient", lambda **_kwargs: FakeClient())
+
+    results = await search_bilibili("AI编程", limit=1)
+
+    assert len(results) == 1
+    assert results[0]["bvid"] == "BV1fallback"
+    assert results[0]["platform_account_id"] == "24680"
+    assert results[0]["profile_url"] == "https://space.bilibili.com/24680"

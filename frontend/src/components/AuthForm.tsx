@@ -87,7 +87,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
                 {fieldError && <p id="confirm-error" className="mt-2 text-sm font-medium text-destructive" role="alert">{fieldError}</p>}
               </div>
             )}
-            {error && <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive" role="alert">{error} 请检查输入后重试。</div>}
+            {error && <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive" role="alert">{error}</div>}
             <Button className="w-full" size="lg" type="submit" isLoading={loading}>{mode === 'login' ? '登录' : '注册并进入工作台'}<ArrowRight className="h-4 w-4" aria-hidden="true" /></Button>
           </form>
 
