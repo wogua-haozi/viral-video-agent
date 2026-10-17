@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -93,7 +93,6 @@ class JobRepository:
         return jobs
     async def clear_outputs(self, job_id: uuid.UUID) -> None:
         await self.db.execute(delete(EvidenceItem).where(EvidenceItem.job_id == job_id))
-        await self.db.execute(delete(UsageRecord).where(UsageRecord.job_id == job_id))
         await self.db.execute(delete(Report).where(Report.job_id == job_id))
     async def clear_report_outputs(self, job_id: uuid.UUID) -> None:
         await self.db.execute(delete(EvidenceItem).where(EvidenceItem.job_id == job_id))
@@ -107,6 +106,78 @@ class JobRepository:
         return await self.db.scalar(select(JobClarification).where(JobClarification.job_id == job_id, JobClarification.request_id == request_id))
     async def clarification_by_request_for_update(self, job_id: uuid.UUID, request_id: uuid.UUID) -> JobClarification | None:
         return await self.db.scalar(select(JobClarification).where(JobClarification.job_id == job_id, JobClarification.request_id == request_id).execution_options(populate_existing=True).with_for_update())
+
+
+class UsageRepository:
+    """Reserve one monthly slot per submitted job and retain measured attempt usage.
+
+    Callers own the transaction. Worker settlement must hold the job row lock so
+    two progress checkpoints cannot overwrite one another.
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def lock_user(self, user_id: uuid.UUID) -> None:
+        # An unchanged UPDATE serializes admissions per user on PostgreSQL, and
+        # acquires SQLite's writer lock where SELECT FOR UPDATE has no effect.
+        await self.db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(is_active=User.is_active)
+            .execution_options(synchronize_session=False)
+        )
+
+    async def reserve(self, job: AnalysisJob) -> UsageRecord:
+        usage = UsageRecord(user_id=job.user_id, job_id=job.id, created_at=job.created_at)
+        self.db.add(usage)
+        await self.db.flush()
+        return usage
+
+    async def settle_attempt(
+        self,
+        job: AnalysisJob,
+        attempt_id: str,
+        cost: dict,
+        asr_seconds: float = 0,
+    ) -> UsageRecord:
+        usage = await self.db.scalar(
+            select(UsageRecord)
+            .where(UsageRecord.job_id == job.id)
+            .execution_options(populate_existing=True)
+            .with_for_update()
+        )
+        if usage is None:
+            # Also supports pre-migration jobs and jobs created by local demos.
+            usage = await self.reserve(job)
+        checkpoints = dict(usage.accounted_attempts or {})
+        self._apply_checkpoint(usage, checkpoints, "attempt:" + attempt_id, {
+            "input_tokens": max(0, int(cost.get("input_tokens", 0) or 0)),
+            "output_tokens": max(0, int(cost.get("output_tokens", 0) or 0)),
+            "estimated_cost": max(0.0, float(cost.get("total_cost", cost.get("estimated_cost", 0)) or 0)),
+            "asr_seconds": max(0.0, float(asr_seconds or 0)),
+        })
+        interaction = job.interaction_usage or {}
+        self._apply_checkpoint(usage, checkpoints, "interaction", {
+            "input_tokens": max(0, int(interaction.get("input_tokens", 0) or 0)),
+            "output_tokens": max(0, int(interaction.get("output_tokens", 0) or 0)),
+            "estimated_cost": max(0.0, float(interaction.get("estimated_cost", 0) or 0)),
+            "asr_seconds": 0.0,
+        })
+        usage.accounted_attempts = checkpoints
+        await self.db.flush()
+        return usage
+
+    @staticmethod
+    def _apply_checkpoint(usage: UsageRecord, checkpoints: dict, key: str, current: dict) -> None:
+        previous = checkpoints.get(key, {})
+        high_water = {}
+        for field, value in current.items():
+            accounted = previous.get(field, 0)
+            high_water[field] = max(accounted, value)
+            total = (getattr(usage, field) or 0) + max(0, value - accounted)
+            setattr(usage, field, round(total, 6) if field in {"estimated_cost", "asr_seconds"} else total)
+        checkpoints[key] = high_water
 
 
 class CandidateRepository:

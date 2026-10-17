@@ -1,8 +1,14 @@
 # 爆款视频分析
 
-面向小规模公开测试的 B 站单平台内容分析产品：输入赛道、选题或竞品需求，生成带真实视频样本、来源链接、结构化结论和可执行建议的报告。
+面向小范围创作者试用准备的 B 站单平台内容研究产品：输入赛道、选题或竞品需求，生成带真实视频样本、来源链接、结构化结论和可执行建议的报告。
 
 > 当前真实视频搜索仅支持 B 站。项目不会宣称支持抖音、快手或小红书实时分析。
+
+当前主线：**整合稳定性、证据可信度和伦勃朗风格前端 → 本地验证 → 小范围创作者试用 → 根据真实反馈迭代**。本轮尚未开始创作者试用或部署。
+
+- [项目状态、实际验收与唯一任务清单](docs/project-status.md)
+- [Windows 启动、停止、测试与数据库备份回退](docs/local-development.md)
+- [本轮功能契约与源包历史记录](docs/creator-pilot-20261017.md)
 
 ## 核心 Agent 工作流
 
@@ -25,7 +31,7 @@ Research Loop / Researcher：LLM 选择工具与参数
   └─ 动态能力注册 + Pydantic 参数校验 + MCP 调用/回退
   │  累积结构化 Evidence
   ▼
-Evidence Gate：无真实证据则 partial/终止
+Evidence Gate：视频实证请求须有有效视频样本；不足则 partial/终止
   │
   ▼
 Analyst：基于 Evidence 生成 observation / inference / recommendation
@@ -39,29 +45,47 @@ Writer：只组织已有 claims 与 Evidence，单次生成报告，不新增事
 
 v2 的重点不是“角色数量”，而是把语义决策留给 Planner、Researcher、Analyst、Writer，把平台边界、循环上限、Evidence 门禁和发布校验交给代码。v1 的 Supervisor 集中路由回环仍保留用于同任务 A/B 与回退，但不参与默认正常链路。
 
+默认 v2 深度模式先采集并补充转写，再执行一次 Analyst/Writer；候选确认启用时从冻结快照恢复，不重复采集。v1 仍保留兼容路径。引用校验验证来源编号存在及结构合法，不等同语义事实核查。
+
 ## 前端体验
 
-前端采用“成熟动漫编辑部 / 科技内容研究工作台”的视觉方向：公共页面使用更鲜明的编辑网格、分镜与 Evidence 节点语言，工作台和报告页保持克制，以长报告、结构化结论和来源证据的可读性为优先。浅色与深色主题共用语义 Token，支持桌面、平板、手机、键盘操作、减少动态效果和浏览器打印/PDF。
+前端采用受伦勃朗明暗与暖色调启发的“创作者书房”：深棕黑背景、赭金色侧光、象牙白文字与衬线标题，工作台和报告保留清楚的信息层级。首次访问默认深色，已保存的主题偏好继续生效；浅色主题使用暖纸色。全部视觉由 CSS 和项目 SVG 实现，不依赖在线字体或绘画图片。
 
-![产品首页](output/playwright/home-desktop.png)
+![深色产品首页](output/creator-pilot/home-desktop-dark.png)
 
 <details>
 <summary>移动端首页、用户 Dashboard 与报告详情</summary>
 
-![移动端首页](output/playwright/home-mobile.png)
+![移动端首页](output/creator-pilot/home-mobile-dark.png)
 
-![用户 Dashboard](output/playwright/dashboard-desktop.png)
+![用户 Dashboard](output/creator-pilot/dashboard-desktop-dark.png)
 
-![报告详情](output/playwright/report-desktop.png)
+![分析进度（演示）](output/creator-pilot/job-progress-desktop-light.png)
+
+![候选确认（演示）](output/creator-pilot/candidates-desktop-light.png)
+
+![浅色工作台（演示）](output/creator-pilot/dashboard-desktop-light.png)
+
+![报告详情（演示）](output/creator-pilot/report-desktop-dark.png)
+
+![浅色移动报告（演示）](output/creator-pilot/report-mobile-light.png)
 </details>
 
-设计决策见 [前端设计说明](docs/frontend-design.md)，本轮真实浏览器与构建检查见 [2026-07-15 前端验收记录](docs/frontend-validation-20260715.md)。
+以上截图由合并后的本机 Windows 前端生产构建实际运行生成；工作台、候选、报告使用虚构演示数据，不代表真实研究结果。运行时间和检查项目见 [本机浏览器结果](output/creator-pilot/ui-validation.json)。设计决策见 [前端设计说明](docs/frontend-design.md)，本轮功能与验证说明见 [创作者试用版改进记录](docs/creator-pilot-20261017.md)。[2026-07-15 前端验收记录](docs/frontend-validation-20260715.md) 保留为旧版基线。
+
+### 本轮创作者试用改进
+
+- 提交时预留月度任务额度；相同请求重发不会新建任务，失败、取消、重试和删除后保留已产生的用量。
+- Worker 使用执行版本、独立执行标识和心跳租约；超时覆盖完整执行阶段，丢失 Worker 的任务可由调度器有限恢复。
+- 实时样本请求需要有效视频来源；缺失指标展示为“未知”，报告附录保留实际字段、发布时间、采集时间和样本边界。
+- 新建分析保留同一请求的提交标识，轮询中断保留当前页面与候选选择；报告支持从引用跳转到对应证据。
+- 升级需要数据库迁移 `20261017_0005`。部署顺序、额度语义与验证边界见 [本轮记录](docs/creator-pilot-20261017.md)。
 
 ## 产品能力
 
 - 注册、登录、退出与 HttpOnly Cookie 会话；密码使用 Argon2 哈希
 - PostgreSQL 长期保存用户、任务、报告、Evidence、反馈、用量和分享链接
-- Arq + Redis 执行 2–5 分钟后台分析任务，支持幂等、取消、有限重试、超时和轮询进度
+- Arq + Redis 执行后台分析任务（耗时依赖样本、模型和转写），支持幂等、取消、有限重试、超时和轮询进度
 - LangGraph v2 保持默认主链路：Entry → Planner → Research Loop → Evidence Gate → Analyst → Writer
 - v1 Supervisor 回环保留为 A/B 与回退，不作为产品默认流程
 - 每条 Evidence 获得稳定 `evidence_id`；Observation 必须引用真实 Evidence
@@ -98,34 +122,20 @@ Compose 包含 8 个服务：`frontend`、`app`、`worker`、`postgres`、`redis
 - [权限、数据与 Evidence 边界](docs/security-and-data.md)
 - [2026-07-13 验收记录](docs/validation-20260713.md)
 
-## 快速开始
+## 本地快速开始
+
+本轮只在现有主目录工作，不访问 GitHub。可立即启动公共页面预览：
 
 ```powershell
-git clone https://github.com/wow-wogua/viral-video-agent.git
-cd viral-video-agent
-Copy-Item .env.example .env
-
-# 编辑 .env：至少配置通用 LLM Key、POSTGRES_PASSWORD 和 JWT_SECRET
-docker compose up -d --build
-
-# 查看状态
-docker compose ps
-docker compose logs -f app worker
+Set-Location D:\internship\viral-video-agent\frontend
+npm run dev -- --hostname 127.0.0.1 --port 3007
 ```
 
-访问：
+访问 [首页](http://127.0.0.1:3007) / [示例](http://127.0.0.1:3007/examples)，停止按 `Ctrl+C`。独立前端的真实注册、工作台与任务需要后端；夹具浏览器回归不需要业务服务。
 
-- 产品：<http://localhost:3000>
-- API 文档：<http://localhost:8000/docs>
-- 经 Nginx：<http://localhost>
+完整业务栈的旧数据库、凭证与恢复备份尚待确认，**不要直接启动会自动迁移数据库的 App**。按 [Windows 本地运行手册](docs/local-development.md) 先准备和验证备份，再使用 `docker-compose.local.yml` 避开本机 80/6379 端口冲突。业务栈就绪后地址为产品 3000、API 8000、代理 8087。
 
-如需本地体验默认关闭的 vNext-C 澄清与候选确认闭环，请按 [vNext-C 本地演示说明](docs/vnext-c-local-demo.md) 配置开关、启动、体验和回退。
-
-数据库迁移由 `app` 启动命令自动执行，也可以手动运行：
-
-```powershell
-docker compose run --rm app alembic upgrade head
-```
+已有 `.env` 不覆盖；缺失时才复制模板。历史 [vNext-C 演示说明](docs/vnext-c-local-demo.md) 保留功能体验步骤，环境操作以本地运行手册为准。
 
 ## 环境变量
 
@@ -175,10 +185,10 @@ USE_FINETUNED_MODEL=true
 FINETUNED_MODEL_URL=http://host.docker.internal:8002/v1
 ```
 
-修改开关后需要重建进程状态，不要求线上热切换：
+后续明确启用并完成旧库安全准备后，修改开关需要重建进程状态，不要求线上热切换：
 
 ```powershell
-docker compose up -d --force-recreate app worker
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --no-deps --force-recreate app worker
 ```
 
 回退时将 `USE_FINETUNED_MODEL=false`，再次重建 App 与 Worker。新进程中的 Researcher 会恢复默认 DeepSeek 路径；自动化测试也覆盖同一进程内 true→false 不残留注册。
@@ -223,9 +233,11 @@ vNext-C 由独立默认关闭开关 `ENABLE_CANDIDATE_CONFIRMATION=false` 控制
 
 候选按匹配 Evidence 数降序、首次 Evidence 顺序、MID 稳定排序；`candidate_id` 由 `sha256("bilibili|mid:{mid}")` 确定性生成。同 MID 合并，同名不同 MID 分离，无合法 MID 的视频可以保留为 Evidence，但不会生成候选。最终报告只把 confirmed 对应 Evidence 交给 Analyst / Writer，uncertain 只进入“未纳入或待确认范围”，excluded 不进入正常竞品结论。
 
-详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md)、[vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md) 与 [vNext-C 验证](docs/interactive-intelligence-vnext-c-validation-20260725.md)。vNext-C0 和 vNext-C 均已完成工程验证，vNext-C engineering Gate passed and frozen，不再继续修改；vNext-D 尚未开始，必须由独立任务明确授权。P0-C 质量 Gate 仍失败并冻结，P0-D/P0-E 未开始。
+详见 [vNext 设计](docs/interactive-intelligence-vnext.md)、[vNext-A 验证](docs/interactive-intelligence-vnext-a-validation-20260722.md)、[vNext-B 验证](docs/interactive-intelligence-vnext-b-validation-20260723.md)、[vNext-C0 验证](docs/interactive-intelligence-vnext-c0-validation-20260725.md) 与 [vNext-C 验证](docs/interactive-intelligence-vnext-c-validation-20260725.md)。vNext-C0 和 vNext-C 均已完成工程验证，vNext-C engineering Gate passed and frozen；本轮只整合可靠性和体验改进，不改写历史 Gate；vNext-D 尚未开始，必须由独立任务明确授权。P0-C 质量 Gate 仍失败并冻结，P0-D/P0-E 未开始。
 
-Job 响应提供服务端计算的 `can_retry` / `can_revise` / `can_confirm_candidates`。前端不再仅凭状态猜测操作；等待候选确认时不可普通 retry、可取消和修改范围，只有服务端允许时才显示候选提交入口。
+Job 响应提供服务端计算的 `can_retry` / `can_revise` / `can_confirm_candidates` / `is_stopping`。等待候选确认时不可普通 retry、可取消和修改范围，只有服务端允许时才显示候选提交入口。取消后的 Worker 清理期间 `is_stopping=true`，前端继续轮询，后端暂不允许删除或重试该任务。
+
+`USER_MONTHLY_JOB_LIMIT` 按 UTC 自然月统计，默认 30 次。新任务与范围修订各预留 1 次；同一幂等请求重发和同一 Job 重试不额外占次数。删除、失败或取消不会返还次数或删除已经记录的消耗。手动重试、执行中断重试和过期租约恢复共用 `JOB_MAX_RETRIES` 上限（默认 2 次）。
 
 ```text
 POST   /jobs
@@ -266,6 +278,8 @@ Analyst 输出：
 - Writer 只能使用已有 claim 与 Evidence
 - 程序追加结构化结论索引和数据附录
 - 报告明确说明样本边界，不把单个视频外推为行业规律
+- 已确认的 `TopicSpec.time_window_days` 用于过滤搜索视频；缺失发布日期、范围外或未来日期样本不会进入该范围的结论。没有结构化时间范围时，报告会明确说明，程序不会声称已经验证自由文本中的日期要求
+- 引用与字段校验不等于语义事实核查；模型信心分数属于未经独立校准的自评
 
 ## ASR 与音频边界
 
@@ -294,9 +308,11 @@ cd ..
 docker compose config --quiet
 ```
 
-vNext-C 工程 Gate 已正式通过并冻结。冻结验证证据包括完整 Python pytest 146 passed；入口/路由测试 16 条，覆盖真实 API → Brief Service → clarification API → Worker → Collection Graph 组合链路，以及 JobCreate/JobRevisionCreate 的两字符、去空白和非法边界；原 vNext-C 18、C0 15、vNext-A 14、vNext-B 21 条回归通过。前端 lint 与生产 build、Python compile、Compose config、PostgreSQL 16 migration 往返和 `git diff --check` 均通过。完整结果见 [vNext-C 验证记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)。
+本机本轮验收统一见 [项目状态](docs/project-status.md)。2026-07 的 vNext-C 工程通过与冻结结论见 [历史验收](docs/interactive-intelligence-vnext-c-validation-20260725.md)，不能代替本次测试或报告质量验收。
 
-### 真实 API 冒烟（2026-07-13）
+### 历史真实 API 冒烟（2026-07-13）
+
+以下保留当时记录；外部模型、接口可用性与费用并未在本轮重新核验。
 
 - 标准分析通过一次真实产品链路：认证 → PostgreSQL job → Arq Worker → MiMo LLM → 25 条 Evidence → 报告与用量 → 分享。耗时 96.16 秒、6 次 LLM、输入/输出 22900/3238 token、无重试、`asr_seconds=0`。
 - 该标准任务是单次本地端到端冒烟（n=1），不代表线上性能。报告引用校验通过，但暴露了 Analyst thinking-only 导致结构化 claims 为空的问题；现已关闭结构化节点 thinking、提高 Analyst/Writer 输出预算，并增加“有 Evidence 时 claims 不能为空”的发布门禁。

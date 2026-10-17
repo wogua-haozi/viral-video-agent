@@ -10,7 +10,7 @@ export default function ExampleReportPage() {
         <div className="min-w-0 space-y-5">
           <div className="border border-info/30 bg-info/10 p-4 text-sm text-foreground"><strong className="mr-2 text-info">结构示例</strong>以下内容不是实时市场数据，Evidence 卡片只展示正式报告的界面结构。</div>
           <Card className="print-card overflow-hidden p-0">
-            <div className="border-b bg-secondary px-6 py-7 text-secondary-foreground sm:px-9"><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">Example report / 01</p><h1 className="title-balance mt-3 text-3xl font-black tracking-[-.04em] sm:text-4xl">B站 AI 编程赛道内容分析示例</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-secondary-foreground/70">用于说明结论层级、Evidence 引用与行动建议如何在同一份报告中协作。</p></div>
+            <div className="border-b bg-secondary px-6 py-7 text-secondary-foreground sm:px-9"><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">Example report / 01</p><h1 className="title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">B站 AI 编程赛道内容分析示例</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-secondary-foreground/70">用于说明结论层级、Evidence 引用与行动建议如何在同一份报告中协作。</p></div>
             <article className="report-prose p-6 sm:p-9">
               <h2>执行摘要</h2><p>示例报告把结论分为数据观察、分析推断和行动建议，并为所有数值结论绑定 Evidence 编号。</p>
               <h2>数据观察</h2><blockquote>代表样本的标题普遍明确指出工具、任务和结果。<a href="#example-evidence">[ev_example_01]</a></blockquote>
@@ -19,7 +19,7 @@ export default function ExampleReportPage() {
             </article>
           </Card>
           <Card id="example-evidence" className="scroll-mt-24 overflow-hidden p-0">
-            <div className="h-1 bg-gradient-to-r from-primary to-accent" /><div className="p-5 sm:p-6"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />ev_example_01</span><span className="rounded-full border bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">界面示例</span></div><h2 className="mt-4 text-lg font-bold">示例 Evidence 卡片</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">真实报告会在这里显示 BVID、标题、UP 主、来源 URL、抓取时间与可用数据字段。</p><div className="mt-5 grid border-t pt-4 text-xs text-muted-foreground sm:grid-cols-3"><span>平台：B站</span><span>字段：标题、作者、互动</span><span>来源：公开页面</span></div></div>
+            <div className="h-1 bg-primary" /><div className="p-5 sm:p-6"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />ev_example_01</span><span className="rounded-full border bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">界面示例</span></div><h2 className="mt-4 text-lg font-bold">示例 Evidence 卡片</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">真实报告会在这里显示 BVID、标题、UP 主、来源 URL、抓取时间与可用数据字段。</p><div className="mt-5 grid border-t pt-4 text-xs text-muted-foreground sm:grid-cols-3"><span>平台：B站</span><span>字段：标题、作者、互动</span><span>来源：公开页面</span></div></div>
           </Card>
         </div>
         <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">

@@ -13,7 +13,7 @@ from src.auth.dependencies import get_current_user
 from src.briefing.schemas import ClarificationAnswer, ClarificationRead
 from src.candidates.schemas import CandidateDecisionSubmit, CandidateListRead, CandidateRead, CandidateTopicSummary
 from src.candidates.service import decision_payload_hash
-from src.config import USER_MONTHLY_JOB_LIMIT
+from src.config import JOB_MAX_RETRIES, USER_MONTHLY_JOB_LIMIT
 from src.db.models import (
     AnalysisJob,
     CandidateDecision,
@@ -26,7 +26,7 @@ from src.db.models import (
 from src.db.session import get_db
 from src.dispatch import DISPATCH_PENDING_MESSAGE
 from src.queue import JobQueue, get_job_queue
-from src.repositories import CandidateRepository, JobRepository, ReportRepository
+from src.repositories import CandidateRepository, JobRepository, ReportRepository, UsageRepository
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -67,7 +67,9 @@ async def _enqueue_committed_job(
         job.dispatch_pending_at = None
         await db.commit()
         return job
-    await db.rollback()
+    # A fast worker may already have started or completed. End the read/lock
+    # transaction without expiring the object returned through JobRead.
+    await db.commit()
     return job
 
 
@@ -97,14 +99,23 @@ async def require_job(job_id: uuid.UUID, user: User, db: AsyncSession):
 
 @router.post("", response_model=JobRead, status_code=202)
 async def create_job(payload: JobCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db), queue: JobQueue = Depends(get_job_queue)):
+    usage_repo = UsageRepository(db)
+    await usage_repo.lock_user(user.id)
+    repo = JobRepository(db)
+    existing = await repo.get_by_idempotency(user.id, payload.idempotency_key)
+    if existing:
+        if (
+            existing.query != payload.query
+            or existing.platforms != payload.platforms
+            or existing.analysis_mode != payload.analysis_mode
+            or existing.revision_of_job_id is not None
+        ):
+            raise AppError(409, "JOB_IDEMPOTENCY_CONFLICT", "这次提交标识已用于其他分析，请重新提交新的任务。")
+        return existing
     if payload.analysis_mode == "deep":
         from src.tools.capabilities import get_tool_capabilities
         if not get_tool_capabilities()["get_transcript"].enabled:
             raise AppError(409, "ASR_UNAVAILABLE", ERROR_MESSAGES["ASR_UNAVAILABLE"])
-    repo = JobRepository(db)
-    existing = await repo.get_by_idempotency(user.id, payload.idempotency_key)
-    if existing:
-        return existing
     since = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     usage = await ReportRepository(db).usage_summary(user.id, since)
     if usage["jobs_used"] >= USER_MONTHLY_JOB_LIMIT:
@@ -118,6 +129,7 @@ async def create_job(payload: JobCreate, user: User = Depends(get_current_user),
         idempotency_key=payload.idempotency_key,
         dispatch_pending_at=now,
     )
+    await usage_repo.reserve(job)
     db.add(JobEvent(job_id=job.id, event_type="queued", message="任务已创建，等待后台 Worker。", progress=0, level="info"))
     await db.commit()
     try:
@@ -393,7 +405,9 @@ async def answer_clarification(
 
 @router.post("/{job_id}/cancel", response_model=JobRead)
 async def cancel_job(job_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    job = await require_job(job_id, user, db)
+    job = await JobRepository(db).get_owned_for_update(job_id, user.id)
+    if not job:
+        raise AppError(404, "JOB_NOT_FOUND", ERROR_MESSAGES["JOB_NOT_FOUND"])
     if job.status not in {"pending", "running", "waiting_user", "waiting_candidate_confirmation"}:
         return job
     job.status, job.cancelled_at, job.error_code, job.error_message = "cancelled", datetime.now(timezone.utc), "JOB_CANCELLED", ERROR_MESSAGES["JOB_CANCELLED"]
@@ -409,6 +423,10 @@ async def retry_job(job_id: uuid.UUID, user: User = Depends(get_current_user), d
     job = await repo.get_owned_for_update(job_id, user.id)
     if not job:
         raise AppError(404, "JOB_NOT_FOUND", ERROR_MESSAGES["JOB_NOT_FOUND"])
+    if job.has_active_worker:
+        raise AppError(409, "JOB_STOPPING", "任务正在停止，请稍后重试。")
+    if job.retry_count >= JOB_MAX_RETRIES:
+        raise AppError(409, "JOB_RETRY_LIMIT_REACHED", "这个任务已达到重试上限，可以调整范围后创建新任务。")
     if not job.can_retry:
         raise AppError(409, "JOB_NOT_RETRYABLE", ERROR_MESSAGES["JOB_NOT_RETRYABLE"])
     decision_batch = await CandidateRepository(db).latest_decision_batch(job.id)
@@ -421,6 +439,10 @@ async def retry_job(job_id: uuid.UUID, user: User = Depends(get_current_user), d
     job.execution_version += 1
     job.status, job.progress, job.error_code, job.error_message, job.cancelled_at = "pending", 0, None, None, None
     job.arq_job_id = None
+    job.worker_token = None
+    job.worker_lease_expires_at = None
+    job.started_at = None
+    job.completed_at = None
     job.dispatch_pending_at = datetime.now(timezone.utc)
     execution_version = job.execution_version
     if decision_batch:
@@ -446,18 +468,20 @@ async def revise_job(
     db: AsyncSession = Depends(get_db),
     queue: JobQueue = Depends(get_job_queue),
 ):
+    usage_repo = UsageRepository(db)
+    await usage_repo.lock_user(user.id)
     repo = JobRepository(db)
     source = await repo.get_owned_for_update(job_id, user.id)
     if not source:
         raise AppError(404, "JOB_NOT_FOUND", ERROR_MESSAGES["JOB_NOT_FOUND"])
-    if not source.can_revise:
-        raise AppError(409, "JOB_REVISION_INVALID", ERROR_MESSAGES["JOB_REVISION_INVALID"])
 
     existing = await repo.get_by_idempotency(user.id, payload.idempotency_key)
     if existing:
         if existing.revision_of_job_id == source.id and existing.query == payload.query:
             return existing
         raise AppError(409, "JOB_REVISION_CONFLICT", ERROR_MESSAGES["JOB_REVISION_CONFLICT"])
+    if not source.can_revise:
+        raise AppError(409, "JOB_REVISION_INVALID", ERROR_MESSAGES["JOB_REVISION_INVALID"])
 
     since = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     usage = await ReportRepository(db).usage_summary(user.id, since)
@@ -486,6 +510,7 @@ async def revise_job(
         revision_of_job_id=source.id,
         dispatch_pending_at=now,
     )
+    await usage_repo.reserve(revised)
     db.add(JobEvent(
         job_id=source.id,
         event_type="scope_revision_created",
@@ -514,7 +539,11 @@ async def revise_job(
 
 @router.delete("/{job_id}", status_code=204)
 async def delete_job(job_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    job = await require_job(job_id, user, db)
+    job = await JobRepository(db).get_owned_for_update(job_id, user.id)
+    if not job:
+        raise AppError(404, "JOB_NOT_FOUND", ERROR_MESSAGES["JOB_NOT_FOUND"])
+    if job.has_active_worker:
+        raise AppError(409, "JOB_STOPPING", "任务正在停止，请稍后删除。")
     if job.status in {"pending", "running"}:
         raise AppError(409, "JOB_RUNNING", "运行中的任务请先取消。")
     if await JobRepository(db).has_revisions(job.id):

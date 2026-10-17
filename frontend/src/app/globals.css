@@ -4,73 +4,73 @@
 
 @layer base {
   :root {
-    --background: 42 38% 97%;
-    --foreground: 222 47% 11%;
-    --surface: 40 30% 99%;
-    --surface-elevated: 0 0% 100%;
-    --card: 40 30% 99%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 198 91% 43%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 222 47% 14%;
-    --secondary-foreground: 40 30% 98%;
-    --accent: 17 86% 58%;
-    --accent-foreground: 222 47% 11%;
-    --muted: 210 24% 94%;
-    --muted-foreground: 215 20% 38%;
-    --success: 160 84% 34%;
+    --background: 39 32% 94%;
+    --foreground: 28 24% 14%;
+    --surface: 40 35% 97%;
+    --surface-elevated: 42 42% 99%;
+    --card: 40 35% 97%;
+    --card-foreground: 28 24% 14%;
+    --popover: 42 42% 99%;
+    --popover-foreground: 28 24% 14%;
+    --primary: 32 68% 31%;
+    --primary-foreground: 42 44% 97%;
+    --secondary: 28 25% 12%;
+    --secondary-foreground: 40 36% 91%;
+    --accent: 17 43% 39%;
+    --accent-foreground: 42 44% 97%;
+    --muted: 36 23% 88%;
+    --muted-foreground: 28 14% 39%;
+    --success: 146 26% 31%;
     --success-foreground: 0 0% 100%;
-    --warning: 35 92% 50%;
-    --warning-foreground: 25 90% 14%;
-    --info: 198 91% 43%;
+    --warning: 35 65% 43%;
+    --warning-foreground: 27 65% 23%;
+    --info: 32 68% 31%;
     --info-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%;
+    --destructive: 8 57% 40%;
     --destructive-foreground: 0 0% 100%;
-    --border: 215 22% 84%;
-    --input: 215 22% 79%;
-    --ring: 198 91% 43%;
-    --radius-lg: .625rem;
-    --radius-xl: .875rem;
-    --radius-2xl: 1.125rem;
-    --shadow-editorial: 0 1px 0 rgba(15, 23, 42, .06), 0 12px 30px rgba(15, 23, 42, .05);
-    --shadow-float: 0 24px 70px rgba(15, 23, 42, .14);
+    --border: 31 20% 78%;
+    --input: 31 20% 68%;
+    --ring: 32 68% 31%;
+    --radius-lg: .375rem;
+    --radius-xl: .625rem;
+    --radius-2xl: .875rem;
+    --shadow-editorial: 0 1px 0 rgba(58, 37, 17, .04), 0 8px 24px rgba(58, 37, 17, .035);
+    --shadow-float: 0 24px 64px rgba(43, 28, 15, .18);
     --motion-fast: 160ms;
     --motion-base: 240ms;
     --ease-editorial: cubic-bezier(.22, 1, .36, 1);
   }
 
   .dark {
-    --background: 222 48% 7%;
-    --foreground: 210 40% 96%;
-    --surface: 222 42% 9%;
-    --surface-elevated: 220 37% 12%;
-    --card: 220 37% 11%;
-    --card-foreground: 210 40% 98%;
-    --popover: 220 37% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 194 93% 56%;
-    --primary-foreground: 222 47% 8%;
-    --secondary: 218 32% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --accent: 18 92% 66%;
-    --accent-foreground: 222 47% 8%;
-    --muted: 218 30% 16%;
-    --muted-foreground: 214 18% 70%;
-    --success: 158 68% 48%;
-    --success-foreground: 222 47% 8%;
-    --warning: 39 96% 58%;
-    --warning-foreground: 222 47% 8%;
-    --info: 194 93% 56%;
-    --info-foreground: 222 47% 8%;
-    --destructive: 0 76% 58%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 218 27% 24%;
-    --input: 218 27% 30%;
-    --ring: 194 93% 56%;
-    --shadow-editorial: 0 1px 0 rgba(255, 255, 255, .04), 0 18px 42px rgba(0, 0, 0, .2);
-    --shadow-float: 0 28px 80px rgba(0, 0, 0, .42);
+    --background: 28 23% 7%;
+    --foreground: 40 33% 89%;
+    --surface: 28 21% 9%;
+    --surface-elevated: 29 19% 13%;
+    --card: 29 21% 10%;
+    --card-foreground: 40 33% 89%;
+    --popover: 29 19% 13%;
+    --popover-foreground: 40 33% 89%;
+    --primary: 37 62% 65%;
+    --primary-foreground: 28 27% 10%;
+    --secondary: 27 23% 12%;
+    --secondary-foreground: 40 36% 91%;
+    --accent: 20 48% 65%;
+    --accent-foreground: 28 27% 10%;
+    --muted: 28 16% 17%;
+    --muted-foreground: 35 17% 65%;
+    --success: 135 25% 65%;
+    --success-foreground: 28 27% 10%;
+    --warning: 38 64% 64%;
+    --warning-foreground: 28 27% 10%;
+    --info: 37 62% 65%;
+    --info-foreground: 28 27% 10%;
+    --destructive: 10 65% 70%;
+    --destructive-foreground: 28 27% 10%;
+    --border: 31 16% 25%;
+    --input: 31 17% 37%;
+    --ring: 37 62% 65%;
+    --shadow-editorial: 0 1px 0 rgba(241, 218, 179, .025), 0 12px 32px rgba(0, 0, 0, .12);
+    --shadow-float: 0 28px 80px rgba(0, 0, 0, .45);
   }
 }
 
@@ -136,10 +136,7 @@
   }
 
   .editorial-grid {
-    background-image:
-      linear-gradient(to right, hsl(var(--foreground) / .055) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--foreground) / .045) 1px, transparent 1px);
-    background-size: 72px 72px;
+    background-image: radial-gradient(ellipse at 80% 0, hsl(var(--primary) / .065), transparent 60%);
   }
 
   .halftone {
@@ -148,8 +145,38 @@
   }
 
   .speed-lines {
-    background-image: repeating-linear-gradient(118deg, transparent 0 13px, hsl(var(--primary) / .16) 14px 15px, transparent 16px 27px);
+    background-image: repeating-linear-gradient(118deg, transparent 0 24px, hsl(var(--primary) / .07) 25px 26px, transparent 27px 50px);
   }
+
+  .studio-hero {
+    position: relative;
+    isolation: isolate;
+    color: #eee3cf;
+    background: radial-gradient(ellipse at 88% 10%, rgba(185, 134, 69, .21), transparent 62%), #211910;
+    border-color: #58432c;
+  }
+
+  .studio-hero .eyebrow { color: #d9b779; }
+  .studio-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: .3;
+    background-image: repeating-linear-gradient(92deg, transparent 0 3px, rgba(234, 211, 177, .026) 3px 4px);
+  }
+
+  .studio-frame {
+    border: 1px solid rgba(216, 177, 112, .4);
+    box-shadow: inset 0 0 0 7px rgba(216, 177, 112, .045), 0 22px 56px rgba(0, 0, 0, .28);
+  }
+
+  .section-heading { @apply font-display text-2xl font-semibold leading-snug tracking-[.01em] sm:text-3xl; }
+  .reading-summary { @apply flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-6; }
+  .reading-summary::-webkit-details-marker { display: none; }
+  .reading-summary svg { transition: transform 160ms ease; }
+  details[open] > .reading-summary > svg { transform: rotate(180deg); }
 
   .title-balance {
     text-wrap: balance;
@@ -165,7 +192,8 @@
   }
 
   .report-prose {
-    @apply text-[15px] leading-7 text-foreground;
+    @apply text-[15px] leading-8 text-foreground sm:text-base;
+    overflow-wrap: anywhere;
   }
 
   .report-prose > * + * {
@@ -175,7 +203,7 @@
   .report-prose h1,
   .report-prose h2,
   .report-prose h3 {
-    @apply font-bold leading-tight tracking-[-.025em] text-foreground;
+    @apply font-display font-semibold leading-snug tracking-[.01em] text-foreground;
     text-wrap: balance;
   }
 
@@ -198,6 +226,8 @@
     overflow-wrap: anywhere;
     word-break: break-word;
   }
+
+  .evidence-citation { @apply rounded-sm bg-primary/10 px-1 font-mono text-xs; }
 
   .motion-enter {
     animation: motion-enter var(--motion-base) var(--ease-editorial) both;
@@ -225,7 +255,16 @@
 
 @media print {
   @page { margin: 18mm; }
+  html { background: white !important; color-scheme: light !important; }
+  :root, .dark {
+    --background: 0 0% 100%; --foreground: 0 0% 10%;
+    --surface: 0 0% 100%; --surface-elevated: 0 0% 100%;
+    --card: 0 0% 100%; --card-foreground: 0 0% 10%;
+    --muted: 0 0% 96%; --muted-foreground: 0 0% 30%;
+    --primary: 30 50% 25%; --border: 30 10% 70%;
+  }
   aside, header, nav, .skip-link, [data-print-hide='true'] { display: none !important; }
+  .app-content { padding-left: 0 !important; }
   main { max-width: none !important; padding: 0 !important; }
   body { background: white !important; color: black !important; }
   * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -236,4 +275,5 @@
   .print-page-break { break-before: page; page-break-before: always; }
   .print-card { border: 0 !important; box-shadow: none !important; }
   .print-header { background: white !important; color: black !important; padding-left: 0 !important; padding-right: 0 !important; }
+  .report-prose h1, .report-prose h2, .report-prose h3 { break-after: avoid; }
 }

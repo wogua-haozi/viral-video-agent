@@ -33,6 +33,7 @@ from src.db.models import (
 )
 from src.db.session import Base, get_db
 from src.gateway.cost_tracker import cost_tracker
+from src.graph import v2 as graph_v2
 from src.main import app
 from src.queue import get_job_queue
 from src import worker
@@ -609,3 +610,112 @@ def test_frontend_consumes_server_capability_and_accessible_candidate_controls()
     assert "decision: CandidateDecision" in api
     assert sum(line.strip().startswith("ENABLE_CANDIDATE_CONFIRMATION:") for line in compose.splitlines()) == 2
     assert "ENABLE_CANDIDATE_CONFIRMATION=false" in env_example
+
+
+@pytest.mark.asyncio
+async def test_failed_collection_gate_saves_partial_without_candidate_snapshot(api_client, monkeypatch):
+    client, factory, _ = api_client
+    owner_id = await register(client, "candidate-failed-gate@example.com")
+    job_id = await create_job(factory, owner_id, status="pending")
+    monkeypatch.setattr(graph_v2, "V2_MIN_EVIDENCE_ITEMS", 2)
+    monkeypatch.setattr(worker, "async_session_factory", factory)
+    monkeypatch.setattr(worker, "ENABLE_CANDIDATE_CONFIRMATION", True)
+    monkeypatch.setattr(worker, "ENABLE_INTERACTIVE_BRIEF", False)
+    result = collection_result([video_evidence("100", 1)])
+    result.update(graph_v2.evidence_gate_node(result))
+    assert result["termination_reason"] == "insufficient_evidence"
+
+    async def collect(*_args, **_kwargs):
+        return result
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("a failed collection gate must not invoke synthesis or ASR")
+
+    monkeypatch.setattr(worker, "_invoke_collection_graph", collect)
+    monkeypatch.setattr(worker, "_invoke_synthesis_graph", forbidden)
+    monkeypatch.setattr(worker, "_collect_transcript_evidence", forbidden)
+    await worker.run_analysis_job({"provider_semaphore": asyncio.Semaphore(1)}, str(job_id), 0)
+
+    async with factory() as db:
+        job = await db.get(AnalysisJob, job_id)
+        report = await db.scalar(select(Report).where(Report.job_id == job_id))
+        assert job.status == "partial"
+        assert job.can_confirm_candidates is False
+        assert report.status == "partial"
+        assert report.structured_claims == []
+        assert "有效视频样本：1 条" in report.content
+        assert await db.scalar(select(func.count()).select_from(CollectionSnapshot)) == 0
+        assert await db.scalar(select(func.count()).select_from(CandidateSnapshot)) == 0
+
+
+@pytest.mark.asyncio
+async def test_selected_candidate_subset_must_still_pass_sample_minimum(api_client, monkeypatch):
+    client, factory, _ = api_client
+    monkeypatch.setattr(graph_v2, "V2_MIN_EVIDENCE_ITEMS", 2)
+    _, job_id, snapshot = await prepare_api_snapshot(client, factory, "candidate-subset-gate@example.com")
+    async with factory() as db:
+        original = await db.scalar(select(CollectionSnapshot).where(CollectionSnapshot.job_id == job_id))
+        original_hash = original.content_hash
+        original_evidence = original.evidence
+    response = await client.post(
+        f"/jobs/{job_id}/candidates/decisions",
+        json=decision_request(snapshot, first="confirmed", second="excluded"),
+    )
+    assert response.status_code == 202
+    monkeypatch.setattr(worker, "async_session_factory", factory)
+    monkeypatch.setattr(worker, "ENABLE_CANDIDATE_CONFIRMATION", True)
+    monkeypatch.setattr(worker, "ENABLE_INTERACTIVE_BRIEF", True)
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("an insufficient confirmed subset must not recollect or invoke a model")
+
+    for name in (
+        "validate_job_brief", "_invoke_collection_graph", "_invoke_graph",
+        "_collect_transcript_evidence", "_invoke_synthesis_graph",
+    ):
+        monkeypatch.setattr(worker, name, forbidden)
+    await worker.run_analysis_job({"provider_semaphore": asyncio.Semaphore(1)}, str(job_id), 1)
+
+    async with factory() as db:
+        job = await db.get(AnalysisJob, job_id)
+        report = await db.scalar(select(Report).where(Report.job_id == job_id))
+        collection = await db.scalar(select(CollectionSnapshot).where(CollectionSnapshot.job_id == job_id))
+        evidence_ids = list(await db.scalars(select(EvidenceItem.evidence_id).where(EvidenceItem.report_id == report.id)))
+        assert job.status == report.status == "partial"
+        assert report.structured_claims == []
+        assert report.model_info["candidate_confirmation"]["snapshot_id"] == snapshot["snapshot_id"]
+        assert "有效视频样本：1 条" in report.content
+        assert "用户确认边界" in report.content
+        assert evidence_ids == snapshot["candidates"][0]["source_evidence_ids"]
+        assert collection.content_hash == original_hash
+        assert collection.evidence == original_evidence
+        assert await db.scalar(select(func.count()).select_from(CandidateDecisionBatch)) == 1
+
+
+@pytest.mark.asyncio
+async def test_account_identity_cannot_replace_a_valid_video_sample(api_client, monkeypatch):
+    client, factory, _ = api_client
+    owner_id = await register(client, "candidate-invalid-video@example.com")
+    job_id = await create_job(factory, owner_id)
+    monkeypatch.setattr(graph_v2, "V2_MIN_EVIDENCE_ITEMS", 1)
+    monkeypatch.setattr(worker, "async_session_factory", factory)
+    raw, evidence = video_evidence("100", 1)
+    raw.pop("bvid")
+    raw.pop("url")
+    evidence["raw_data"].pop("bvid")
+    evidence["raw_data"].pop("url")
+    evidence["data_fields"].pop("bvid")
+    evidence["source_url"] = None
+    # Keep the frozen account-identity contract: identity can be established
+    # even when the result is insufficient as a video analysis sample.
+    assert len(extract_candidates([evidence])) == 1
+    result = {**collection_result([(raw, evidence)]), "data_sufficient": True}
+    saved = await worker._persist_collection_snapshot(job_id, 0, result)
+
+    async with factory() as db:
+        job = await db.get(AnalysisJob, job_id)
+        report = await db.get(Report, uuid.UUID(saved["report_id"]))
+        assert job.status == report.status == "partial"
+        assert job.can_confirm_candidates is False
+        assert "有效视频样本：0 条" in report.content
+        assert await db.scalar(select(func.count()).select_from(CandidateSnapshot)) == 0

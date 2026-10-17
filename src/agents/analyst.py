@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from langchain_core.messages import HumanMessage
 from src.agents.supervisor import get_llm, extract_text
@@ -7,6 +8,15 @@ from src.config import ANALYST_MAX_ITERATIONS, V2_ANALYST_MAX_ITERATIONS
 from src.utils.fallback_counter import fallback_counter
 from src.utils.trace_tracker import trace_tracker
 from src.prompts.manager import prompt_manager
+
+
+def _self_score(value: object) -> float:
+    """Bound the model's self-assessment; this is not a calibrated probability."""
+    try:
+        number = float(value) if not isinstance(value, bool) else 0.0
+        return min(1.0, max(0.0, number)) if math.isfinite(number) else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 async def analyst_node(state: AgentState) -> dict:
@@ -37,35 +47,31 @@ async def analyst_node(state: AgentState) -> dict:
 
     # 尝试解析 JSON
     result = _parse_analysis(text)
-    valid_evidence_ids = {
-        item.get("_evidence_id")
-        for item in raw_data
-        if isinstance(item, dict) and item.get("_evidence_id")
-    }
+    result["confidence"] = _self_score(result.get("confidence"))
     claims = []
-    for claim in result.get("claims", []):
+    supplied_claims = result.get("claims", [])
+    for claim in supplied_claims if isinstance(supplied_claims, list) else []:
         if not isinstance(claim, dict) or not claim.get("claim"):
             continue
         claim_type = claim.get("claim_type", "inference")
-        if claim_type not in {"observation", "inference", "recommendation"}:
-            claim_type = "inference"
-        evidence_ids = [item for item in claim.get("evidence_ids", []) if item in valid_evidence_ids]
-        if claim_type == "observation" and not evidence_ids:
-            continue
+        # Preserve supplied references so the validator can reject an invalid
+        # attribution. Silently deleting it would disguise an unsupported claim.
+        evidence_ids = claim.get("evidence_ids", [])
         claims.append({
             "claim": str(claim["claim"]),
             "claim_type": claim_type,
             "evidence_ids": evidence_ids,
-            "confidence": min(1.0, max(0.0, float(claim.get("confidence", result.get("confidence", 0.7))))),
+            "confidence": _self_score(claim.get("confidence", result["confidence"])),
         })
     if not claims:
-        claims = [{"claim": str(item), "claim_type": "inference", "evidence_ids": sorted(valid_evidence_ids), "confidence": result.get("confidence", 0.7)} for item in result.get("insights", [])[:5]]
+        insights = result.get("insights", [])
+        claims = [{"claim": str(item), "claim_type": "inference", "evidence_ids": [], "confidence": result["confidence"]} for item in (insights if isinstance(insights, list) else [])[:5]]
     result["claims"] = claims
 
     trace_tracker.end_agent("analyst")
     return {
         "analysis": result,
-        "analysis_confidence": result.get("confidence", 0.7),
+        "analysis_confidence": result["confidence"],
         "analysis_iterations": iterations + 1,
     }
 
@@ -75,8 +81,9 @@ def _parse_analysis(text: str) -> dict:
     # 1. 直接解析 JSON
     try:
         result = json.loads(text.strip())
-        fallback_counter.log("analyst", "json")
-        return result
+        if isinstance(result, dict):
+            fallback_counter.log("analyst", "json")
+            return result
     except json.JSONDecodeError:
         pass
 
@@ -86,8 +93,9 @@ def _parse_analysis(text: str) -> dict:
         clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
         result = json.loads(clean)
-        fallback_counter.log("analyst", "json")
-        return result
+        if isinstance(result, dict):
+            fallback_counter.log("analyst", "json")
+            return result
     except json.JSONDecodeError:
         pass
 

@@ -2,37 +2,54 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowUpRight, Check, CheckCircle2, ChevronRight, Clock3, Copy, ExternalLink, Link2, MessageSquare, ShieldCheck } from 'lucide-react';
-import { Button, Card, Input, Modal, Select, StatusBadge, Textarea, Toast } from '@/components/ui';
+import { ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Copy, ExternalLink, Link2, MessageSquare, ShieldCheck } from 'lucide-react';
+import { Button, Card, Input, Modal, Select, StatusBadge, Textarea } from '@/components/ui';
 import type { Claim, EvidenceItem, JobEvent, UsageSummary } from '@/lib/api';
 import { createFeedback, createShareLink, readableError } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { revealEvidence, sourceDate, sourceUrl, timecode } from '@/lib/evidence';
+
+const evidenceFields: [string, string][] = [
+  ['author', '作者'], ['bvid', '视频编号'], ['view', '播放'], ['like', '点赞'],
+  ['reply', '评论'], ['favorite', '收藏'], ['coin', '投币'], ['share', '分享'], ['duration', '时长'],
+];
+
+function fieldValue(value: unknown, key: string) {
+  if (value === null || value === undefined || value === '') return '未提供';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return '未提供';
+    return key === 'duration' ? timecode(value) : value.toLocaleString('zh-CN');
+  }
+  return typeof value === 'string' || typeof value === 'boolean' ? String(value) : '未提供';
+}
 
 export function EvidenceCard({ evidence }: { evidence: EvidenceItem }) {
+  const url = sourceUrl(evidence.source_url);
+  const isTranscript = evidence.source_type === 'transcript';
+  const fields = evidence.data_fields || {};
+  const transcript = evidence.transcript_segment;
+  const transcriptText = typeof transcript?.text === 'string' ? transcript.text : '';
+  const segments = Array.isArray(transcript?.segments) ? transcript.segments.filter((item): item is { start?: number; end?: number; text: string } => Boolean(item && typeof item === 'object' && typeof item.text === 'string')) : [];
+  // Platform describes the research scope; a Bilibili knowledge-base result is not a video sample.
+  const isVideo = evidence.source_type === 'bilibili_video' || evidence.source_type === 'video';
+  const sourceLabel = isTranscript ? '口播转写' : isVideo ? '视频样本' : evidence.source_type === 'knowledge_base' ? '知识参考' : evidence.source_type === 'trend_data' ? '趋势参考' : '工具来源';
+  const publishDate = typeof fields.pubdate === 'number' && fields.pubdate > 0 ? new Date(fields.pubdate * 1000) : null;
+  const publishedAt = typeof fields.published_at === 'string' ? fields.published_at : publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate.toISOString() : null;
   return (
-    <Card id={evidence.evidence_id} className="print-avoid group scroll-mt-24 overflow-hidden p-0 transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-float">
-      <div className="h-1 bg-gradient-to-r from-primary via-primary to-accent" />
+    <Card id={evidence.evidence_id} tabIndex={-1} className="print-avoid scroll-mt-24 overflow-hidden p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <div className="h-px bg-primary/60" />
       <div className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-primary"><span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />{evidence.evidence_id}</span>
-              <span className="rounded-full border bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{evidence.source_type}</span>
-            </div>
-            <h3 className="break-content text-base font-bold leading-6">{evidence.title}</h3>
-            {evidence.summary && <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">{evidence.summary}</p>}
+            <div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-sm border border-primary/25 bg-primary/5 px-2 py-1 font-mono text-[10px] text-primary">{evidence.evidence_id}</span><span className="text-xs text-muted-foreground">{sourceLabel}</span></div>
+            <h3 className="break-content font-display text-lg font-semibold leading-7">{evidence.title || '未提供标题'}</h3>
+            {evidence.summary && <p className="mt-3 text-pretty text-sm leading-7 text-muted-foreground">{evidence.summary}</p>}
           </div>
-          {evidence.source_url && (
-            <a href={evidence.source_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-2 self-start rounded-lg border px-3 text-sm font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              打开来源<ExternalLink className="h-4 w-4" aria-hidden="true" />
-            </a>
-          )}
+          {url && <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-2 self-start rounded-lg border px-3 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">回看来源<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></a>}
         </div>
-        <dl className="mt-5 grid divide-y border-t text-xs sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <div className="py-3 sm:pr-4"><dt className="font-mono uppercase tracking-[.12em] text-muted-foreground">Platform</dt><dd className="mt-1.5 font-semibold text-foreground">{evidence.platform || 'B站'}</dd></div>
-          <div className="py-3 sm:px-4"><dt className="font-mono uppercase tracking-[.12em] text-muted-foreground">Fetched</dt><dd className="mt-1.5 font-semibold text-foreground">{new Date(evidence.fetched_at).toLocaleString('zh-CN')}</dd></div>
-          <div className="py-3 sm:pl-4"><dt className="font-mono uppercase tracking-[.12em] text-muted-foreground">Fields</dt><dd className="break-content mt-1.5 font-semibold text-foreground">{Object.keys(evidence.data_fields || {}).join('、') || '来源文本'}</dd></div>
-        </dl>
+        {isVideo && <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">{evidenceFields.map(([key, label]) => <div key={key} className="min-w-0 bg-card p-3"><dt className="text-[11px] text-muted-foreground">{label}</dt><dd className="break-content mt-1.5 font-mono text-sm font-medium">{fieldValue(key === 'author' ? fields.author ?? fields.display_name : fields[key], key)}</dd></div>)}</dl>}
+        {isTranscript && <details className="mt-4 rounded-lg border bg-muted/20"><summary className="reading-summary !min-h-11 !px-3 !py-3 text-sm">查看转写原文{segments.length > 0 ? ` · ${segments.length} 个片段` : ''}<ChevronDown className="h-4 w-4" aria-hidden="true" /></summary><div className="max-h-96 overflow-y-auto border-t p-4 text-sm leading-7" tabIndex={0} role="region" aria-label={`${evidence.title}的转写内容`}>{segments.length > 0 ? <ol className="space-y-4">{segments.map((segment, index) => <li key={index}><span className="font-mono text-xs text-primary">{timecode(segment.start)}{typeof segment.end === 'number' ? ` – ${timecode(segment.end)}` : ''}</span><p className="break-content mt-1">{segment.text}</p></li>)}</ol> : <p className="whitespace-pre-wrap break-content">{transcriptText || '未提供转写原文'}</p>}</div></details>}
+        <dl className="mt-5 grid gap-3 border-t pt-4 text-xs leading-6">{isVideo && <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">发布时间</dt><dd>{sourceDate(publishedAt)}</dd></div>}<div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">采集时间</dt><dd>{sourceDate(evidence.fetched_at)}</dd></div><div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">来源平台</dt><dd>{evidence.platform === 'bilibili' ? 'B 站' : evidence.platform || '未提供'}</dd></div><div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">原始出处</dt><dd className="break-content">{url ? <a className="rounded-sm text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={url} target="_blank" rel="noreferrer">{url}</a> : '未提供'}</dd></div></dl>
       </div>
     </Card>
   );
@@ -50,12 +67,12 @@ export function ReportClaim({ claim }: { claim: Claim }) {
     <article className={cn('print-avoid rounded-r-xl border border-l-4 bg-card p-4 sm:p-5', meta.style)}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[.12em]"><span className="font-mono text-[10px] opacity-70">{meta.index}</span>{meta.label}</span>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">置信度 {Math.round(claim.confidence * 100)}%</span>
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">模型自评 {Number.isFinite(claim.confidence) ? `${Math.round(claim.confidence * 100)}%` : '未提供'}</span>
       </div>
       <p className="text-pretty text-sm font-medium leading-7 text-foreground">{claim.claim}</p>
       <div className="mt-4 flex flex-wrap gap-2">
         {claim.evidence_ids.length ? claim.evidence_ids.map((id) => (
-          <a key={id} href={`#${id}`} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border bg-background px-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <a key={id} href={`#${id}`} onClick={() => revealEvidence(id)} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border bg-background px-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <Link2 className="h-3 w-3" aria-hidden="true" />{id}
           </a>
         )) : <span className="inline-flex items-center gap-2 text-xs font-medium text-warning-foreground dark:text-warning"><span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true" />该建议基于推断，不包含直接数值证据</span>}
@@ -98,11 +115,11 @@ export function UsageCard({ usage }: { usage: UsageSummary }) {
     <Card className="relative overflow-hidden p-5">
       <div className="halftone absolute -right-6 -top-8 h-28 w-28 opacity-25" />
       <div className="relative flex items-start justify-between gap-4">
-        <div><p className="eyebrow">Monthly usage</p><p className="mt-2 text-3xl font-black tabular-nums">{usage.jobs_used}<span className="ml-2 text-sm font-medium text-muted-foreground">/ {usage.jobs_limit} 次</span></p></div>
+        <div><p className="eyebrow">本月已提交</p><p className="mt-2 text-3xl font-black tabular-nums">{usage.jobs_used}<span className="ml-2 text-sm font-medium text-muted-foreground">/ {usage.jobs_limit} 次</span></p></div>
         <div className="grid h-11 w-11 place-items-center rounded-xl border border-primary/25 bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div>
       </div>
-      <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="本月任务用量" aria-valuemin={0} aria-valuemax={usage.jobs_limit} aria-valuenow={usage.jobs_used}><div className="h-full rounded-full bg-gradient-to-r from-primary to-info transition-[width]" style={{ width: `${ratio}%` }} /></div>
-      <p className="relative mt-3 text-xs leading-5 text-muted-foreground">标准分析与内容深度分析都会计入任务次数。</p>
+      <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="本月任务用量" aria-valuemin={0} aria-valuemax={usage.jobs_limit} aria-valuenow={usage.jobs_used}><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${ratio}%` }} /></div>
+      <p className="relative mt-3 text-xs leading-6 text-muted-foreground">本月已提交的任务次数。提交即占用额度；同一任务恢复或重试不重复计次，删除不返还。</p>
     </Card>
   );
 }
@@ -136,11 +153,11 @@ export function FeedbackForm({ reportId }: { reportId: string }) {
         <label className="text-sm font-semibold">是否有用<Select className="mt-2" value={useful ? 'yes' : 'no'} onChange={(event) => setUseful(event.target.value === 'yes')}><option value="yes">有用</option><option value="no">无用</option></Select></label>
         <label className="text-sm font-semibold">评分<Select className="mt-2" value={rating} onChange={(event) => setRating(event.target.value)}>{[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} 分</option>)}</Select></label>
       </div>
-      <label className="mt-4 block text-sm font-semibold">主要原因<Input className="mt-2" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例如：样本相关、建议具体、证据不足" /></label>
-      <label className="mt-4 block text-sm font-semibold">补充说明 <span className="font-normal text-muted-foreground">（可选）</span><Textarea className="mt-2 min-h-24" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="告诉我们哪些结论最有用，或哪里需要改进" /></label>
+      <label className="mt-4 block text-sm font-semibold">主要原因<Input className="mt-2" maxLength={100} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例如：样本相关、建议具体、证据不足" /></label>
+      <label className="mt-4 block text-sm font-semibold">补充说明 <span className="font-normal text-muted-foreground">（可选）</span><Textarea className="mt-2 min-h-24" maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="告诉我们哪些结论最有用，或哪里需要改进" /></label>
       {error && <p className="mt-3 text-sm font-medium text-destructive" role="alert">{error} 请稍后重试。</p>}
-      <Button className="mt-4" onClick={submit} isLoading={loading}>提交反馈</Button>
-      {sent && <Toast message="反馈已保存，感谢你的帮助。" />}
+      <Button className="mt-4" onClick={submit} isLoading={loading} disabled={sent}>{sent ? '反馈已保存' : '提交反馈'}</Button>
+      {sent && <p className="mt-3 text-sm text-success" role="status">反馈已保存，感谢你帮助完善这份研究。</p>}
     </Card>
   );
 }
@@ -167,16 +184,18 @@ export function ShareDialog({ reportId }: { reportId: string }) {
   };
 
   const copy = async () => {
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true); setError('');
+      setTimeout(() => setCopied(false), 1800);
+    } catch { setError('无法访问剪贴板，请手动复制下面的链接。'); }
   };
 
   return (
     <>
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}><ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />分享</Button>
       <Modal open={open} title="创建只读分享链接" onClose={() => setOpen(false)}>
-        <p className="text-pretty text-sm leading-6 text-muted-foreground">分享页不会展示用户信息、成本详情或内部执行日志，可随时在设置中撤销。</p>
+        <p className="text-pretty text-sm leading-6 text-muted-foreground">分享页展示报告与公开证据，隐藏账号、成本和内部日志。任何持有链接的人均可查看，到期后链接失效。</p>
         <label className="mt-5 block text-sm font-semibold">有效期<Select className="mt-2" value={days} onChange={(event) => setDays(event.target.value)} disabled={Boolean(url)}><option value="1">1 天后过期</option><option value="7">7 天后过期</option><option value="30">30 天后过期</option></Select></label>
         {error && <p className="mt-3 text-sm font-medium text-destructive" role="alert">{error} 请稍后重试。</p>}
         {url ? (
@@ -184,7 +203,7 @@ export function ShareDialog({ reportId }: { reportId: string }) {
             <label className="text-sm font-semibold">分享地址<Input className="mt-2 font-mono text-xs" readOnly value={url} /></label>
             <Button className="mt-3 w-full" onClick={copy}>{copied ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}{copied ? '已复制' : '复制链接'}</Button>
           </div>
-        ) : <Button className="mt-5 w-full" onClick={create} isLoading={loading}>生成高熵链接</Button>}
+        ) : <Button className="mt-5 w-full" onClick={create} isLoading={loading}>创建分享链接</Button>}
       </Modal>
     </>
   );
@@ -198,7 +217,7 @@ export function JobSummaryCard({ id, title, status, progress, createdAt }: { id:
           <div className="min-w-0"><p className="break-content font-bold leading-6">{title}</p><p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">{new Date(createdAt).toLocaleString('zh-CN')}</p></div>
           <StatusBadge status={status} />
         </div>
-        <div className="mt-4 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full bg-gradient-to-r from-primary to-info" style={{ width: `${progress}%` }} /></div><span className="font-mono text-[11px] text-muted-foreground">{progress}%</span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></div>
+        <div className="mt-4 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full bg-primary" style={{ width: `${progress}%` }} /></div><span className="font-mono text-[11px] text-muted-foreground">{progress}%</span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></div>
       </Card>
     </Link>
   );

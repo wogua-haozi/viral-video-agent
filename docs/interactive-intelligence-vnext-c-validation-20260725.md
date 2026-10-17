@@ -1,5 +1,7 @@
 # vNext-C 候选账号人工确认闭环验证记录（2026-07-25）
 
+> 历史验收档案：结果和旧版截图仅对应标题日期的版本，不代表本轮本机验收或当前界面。当前状态见 [项目状态](project-status.md)。
+
 ## Gate 范围与 Git
 
 - 基线分支：`feat/interactive-intelligence-vnext-c0`

@@ -2,13 +2,13 @@
   <title id="title">爆款视频分析标志</title>
   <defs>
     <linearGradient id="brand" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#4F46E5"/>
-      <stop offset="1" stop-color="#06B6D4"/>
+      <stop stop-color="#CBA264"/>
+      <stop offset="1" stop-color="#80532B"/>
     </linearGradient>
   </defs>
-  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#brand)"/>
-  <path d="M23 19.5v25l20-12.5-20-12.5Z" fill="white" fill-opacity=".96"/>
-  <path d="m15.5 46 8-7 7 3 13-15 5 3" fill="none" stroke="#A5F3FC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#292017" stroke="#BC955D" stroke-width="1.5"/>
+  <path d="M23 19.5v25l20-12.5-20-12.5Z" fill="url(#brand)"/>
+  <path d="m15.5 46 8-7 7 3 13-15 5 3" fill="none" stroke="#F1E5CB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="15.5" cy="46" r="3" fill="white"/>
   <circle cx="30.5" cy="42" r="3" fill="white"/>
   <circle cx="43.5" cy="27" r="3" fill="white"/>

@@ -1,5 +1,7 @@
 # Researcher 微调模型 Worker 可选接入验证（2026-07-20）
 
+> 本文是 2026-07-20 的历史接入验收，结论与数据保持原样；当前运行、任务与实际验证以 [项目状态](project-status.md) 为准。可选路由仍默认关闭。
+
 ## Gate 结论
 
 本维护分支完成项目三 Qwen3-4B v4.1 到项目二真实 Arq Worker 的可选 Researcher 路由接入。默认开关仍为关闭；显式启用时只覆盖 Researcher，Planner、Analyst、Writer 的默认 DeepSeek V4 Pro 路由不变。该接入已通过总控复核，并以 fast-forward 方式进入 `main`。

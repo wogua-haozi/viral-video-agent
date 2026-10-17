@@ -12,6 +12,7 @@ __pycache__
 frontend/node_modules
 frontend/.next
 backups
+viral-video-agent-new
 tmp
 *.mp3
 *.wav

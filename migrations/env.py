@@ -12,7 +12,7 @@ from src.db import models  # noqa: F401
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 target_metadata = Base.metadata
 
 
@@ -37,5 +37,9 @@ async def run_async_migrations() -> None:
 
 if context.is_offline_mode():
     run_migrations_offline()
+elif config.attributes.get("connection") is not None:
+    # Programmatic callers can supply a transaction/scoped connection, including
+    # AsyncConnection.run_sync in isolated PostgreSQL migration tests.
+    do_run_migrations(config.attributes["connection"])
 else:
     asyncio.run(run_async_migrations())

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,7 @@ from src.config import (
     XFYUN_APPID,
     XFYUN_SECRET_KEY,
 )
+from src.utils.asr_usage_tracker import asr_usage_tracker
 
 PROJECT_TMP = Path(__file__).resolve().parents[2] / "tmp"
 BVID_RE = re.compile(r"BV[0-9A-Za-z]{10}")
@@ -179,24 +181,42 @@ async def _cache_set(keys: list[str], value: dict) -> None:
         return
 
 
+def _cached_transcript(cached: dict) -> dict:
+    # Older cache entries used asr_seconds for the original audio duration.
+    # Reusing that transcript does not consume a new provider request.
+    return {
+        **cached,
+        "audio_seconds": cached.get("audio_seconds", cached.get("asr_seconds", 0)),
+        "asr_seconds": 0,
+        "asr_usage_receipt": None,
+        "cache_hit": True,
+    }
+
+
 async def get_transcript(video_url: str) -> dict | None:
     providers = get_transcript_providers()
     if not providers: return None
     bvid_match = BVID_RE.search(video_url)
     bvid_key = f"transcript:bvid:{bvid_match.group(0)}" if bvid_match else f"transcript:url:{hashlib.sha256(video_url.encode()).hexdigest()[:20]}"
     cached = await _cache_get(bvid_key)
-    if cached: return cached
+    if cached: return _cached_transcript(cached)
     audio_bytes, audio_format, duration_seconds = await asyncio.to_thread(_extract_audio_sync, video_url)
     audio_hash = hashlib.sha256(audio_bytes).hexdigest()
     hash_key = f"transcript:audio:{audio_hash}"
     cached = await _cache_get(hash_key)
-    if cached: return cached
+    if cached: return _cached_transcript(cached)
     last_error = None
     for provider in providers:
         try:
             result = await provider.transcribe(audio_bytes=audio_bytes, audio_format=audio_format, audio_hash=audio_hash, video_url=video_url)
+            result["audio_seconds"] = duration_seconds
             result["asr_seconds"] = duration_seconds
-            await _cache_set([bvid_key, hash_key], result)
+            result["asr_usage_receipt"] = {"id": str(uuid.uuid4()), "seconds": duration_seconds}
+            result["cache_hit"] = False
+            # Record before another await: a completed provider call still
+            # consumed work if cache persistence or later analysis is cancelled.
+            asr_usage_tracker.record(result)
+            await _cache_set([bvid_key, hash_key], _cached_transcript(result))
             return result
         except TranscriptError as exc:
             last_error = exc

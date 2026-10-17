@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, PencilLine, RotateCcw, Square } from 'lucide-react';
+import { ArrowLeft, PencilLine, RefreshCw, RotateCcw, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { CandidateConfirmation } from '@/components/CandidateConfirmation';
@@ -25,6 +25,11 @@ export default function JobPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [refreshError, setRefreshError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [pollingEpoch, setPollingEpoch] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   const [answerError, setAnswerError] = useState('');
   const [retryError, setRetryError] = useState('');
   const [retrying, setRetrying] = useState(false);
@@ -33,43 +38,98 @@ export default function JobPage() {
   const [revisionError, setRevisionError] = useState('');
   const [revising, setRevising] = useState(false);
   const revisionKey = useRef('');
+  const revisionFingerprint = useRef('');
+  const jobRef = useRef<Job | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const signal = controller.signal;
     try {
-      const [jobData, eventData] = await Promise.all([getJob(id), getJobEvents(id)]);
+      const jobData = await getJob(id, signal);
+      if (signal.aborted) return;
+      jobRef.current = jobData;
       setJob(jobData);
-      setEvents(eventData.items);
-      const clarificationData = jobData.clarification_round > 0 ? await getJobClarification(id) : null;
-      setClarification(jobData.status === 'waiting_user' ? clarificationData?.current || null : null);
-      setClarificationHistory(clarificationData?.history || []);
-      if (jobData.status === 'waiting_candidate_confirmation') setCandidateSnapshot(await getJobCandidates(id));
-      else setCandidateSnapshot(null);
+      setError('');
+      if (jobData.status !== 'waiting_candidate_confirmation') setCandidateSnapshot(null);
+      if (jobData.status !== 'waiting_user') setClarification(null);
+      const [eventResult, briefResult, candidateResult] = await Promise.allSettled([
+        getJobEvents(id, signal),
+        jobData.clarification_round > 0 ? getJobClarification(id, signal) : Promise.resolve(null),
+        jobData.status === 'waiting_candidate_confirmation' ? getJobCandidates(id, signal) : Promise.resolve(null),
+      ]);
+      if (signal.aborted) return;
+      if (eventResult.status === 'fulfilled') setEvents(eventResult.value.items);
+      if (briefResult.status === 'fulfilled') {
+        setClarification(jobData.status === 'waiting_user' ? briefResult.value?.current || null : null);
+        setClarificationHistory(briefResult.value?.history || []);
+      }
+      if (candidateResult.status === 'fulfilled') setCandidateSnapshot(candidateResult.value);
+      const failed = [eventResult, briefResult, candidateResult].find((result) => result.status === 'rejected');
+      setRefreshError(failed?.status === 'rejected' ? readableError(failed.reason) : '');
+      setLastUpdated(new Date());
       if (revisionMode) {
-        setShowRevision(true);
         setRevisionQuery((current) => current || jobData.query);
       }
-      setError('');
       if (!revisionMode && jobData.report_id && ['completed', 'partial'].includes(jobData.status)) router.replace(`/reports/${jobData.report_id}`);
     } catch (err) {
-      setError(readableError(err));
+      if (signal.aborted) return;
+      // A background refresh must never unmount an in-progress confirmation form.
+      if (jobRef.current) setRefreshError(readableError(err));
+      else setError(readableError(err));
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [id, revisionMode, router]);
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 2500);
-    return () => clearInterval(timer);
-  }, [load]);
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pollVersion = 0;
+    jobRef.current = null;
+    setJob(null);
+    setLoading(true);
+    setError('');
+    setRefreshError('');
+    setCandidateSnapshot(null);
+    setSelectedOption('');
+    setCustomAnswer('');
+    setShowRevision(revisionMode);
+    setRevisionQuery('');
+    revisionKey.current = '';
+    revisionFingerprint.current = '';
+    const poll = async () => {
+      const version = ++pollVersion;
+      clearTimeout(timer);
+      await load();
+      if (disposed || version !== pollVersion) return;
+      const status = jobRef.current?.status;
+      if (status && ['completed', 'partial', 'failed', 'cancelled'].includes(status) && !jobRef.current?.is_stopping) return;
+      timer = setTimeout(poll, document.hidden ? 15000 : status?.startsWith('waiting_') ? 8000 : 3500);
+    };
+    const onVisibility = () => { if (!document.hidden) void poll(); };
+    void poll();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { disposed = true; clearTimeout(timer); controllerRef.current?.abort(); document.removeEventListener('visibilitychange', onVisibility); };
+  }, [load, revisionMode, pollingEpoch]);
 
-  const cancel = async () => { setJob(await cancelJob(id)); await load(); };
+  const cancel = async () => {
+    setCancelling(true); setCancelError('');
+    try { await cancelJob(id); await load(); }
+    catch (err) { setCancelError(readableError(err)); }
+    finally { setCancelling(false); }
+  };
   const retry = async () => {
     setRetrying(true);
     setRetryError('');
     try {
       const updated = await retryJob(id);
+      jobRef.current = updated;
+      setJob(updated);
       router.replace(`/jobs/${updated.id}`);
+      setPollingEpoch((value) => value + 1);
     } catch (err) {
       setRetryError(readableError(err));
       await load();
@@ -82,7 +142,10 @@ export default function JobPage() {
     if (!job || !revisionQuery.trim() || revisionQuery.trim() === job.query.trim()) return;
     setRevising(true);
     setRevisionError('');
-    if (!revisionKey.current) revisionKey.current = crypto.randomUUID();
+    if (!revisionKey.current || revisionFingerprint.current !== revisionQuery.trim()) {
+      revisionKey.current = crypto.randomUUID();
+      revisionFingerprint.current = revisionQuery.trim();
+    }
     try {
       const revised = await reviseJob(id, { query: revisionQuery.trim(), idempotency_key: revisionKey.current });
       router.replace(`/jobs/${revised.id}`);
@@ -119,9 +182,12 @@ export default function JobPage() {
           <>
             <Link href="/history" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="h-4 w-4" aria-hidden="true" />返回任务列表</Link>
             <div className="mt-4 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-start">
-              <div className="min-w-0"><p className="eyebrow">Live job / {job.id.slice(0, 6)}</p><h1 className="break-content title-balance mt-2 text-2xl font-black tracking-[-.035em] sm:text-3xl">{job.query}</h1><div className="mt-4 flex flex-wrap items-center gap-3"><StatusBadge status={job.status} /><span className="font-mono text-xs tabular-nums text-muted-foreground">进度 {job.progress}%</span><span className="text-xs text-muted-foreground">B站 · {job.analysis_mode === 'deep' ? '内容深度分析' : '标准分析'}</span></div></div>
-              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="danger" size="sm" onClick={cancel}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重新分析</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}</p>}</div>
+              <div className="min-w-0"><p className="eyebrow">Research in progress / {job.id.slice(0, 6)}</p><h1 className="break-content title-balance mt-3 font-display text-2xl font-semibold leading-relaxed sm:text-3xl">{job.query}</h1><div className="mt-4 flex flex-wrap items-center gap-3"><StatusBadge status={job.status} /><span className="font-mono text-xs tabular-nums text-muted-foreground">{job.progress}%</span><span className="text-xs text-muted-foreground">B站 · {job.analysis_mode === 'deep' ? '内容深度分析' : '标准分析'}</span></div></div>
+              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="secondary" className="text-destructive" size="sm" onClick={cancel} isLoading={cancelling}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重试任务</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}</p>}{cancelError && <p className="max-w-sm text-sm text-destructive" role="alert">{cancelError}</p>}</div>
             </div>
+
+            {refreshError && <div className="mt-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center" role="status"><p className="flex-1 text-sm leading-7">状态更新暂时中断，已保留当前内容与选择。{refreshError}</p><Button variant="secondary" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />重新连接</Button></div>}
+            <p className="mt-5 text-sm leading-7 text-muted-foreground" role="status">{job.is_stopping ? '正在停止并保存本次用量。完成后，这里会更新可用操作。' : job.status === 'waiting_user' ? '需要你补充下面的问题。提交后，研究会继续。' : job.status === 'waiting_candidate_confirmation' ? '样本已整理好，请决定哪些账号纳入分析。等待期间不会继续生成报告。' : job.status === 'pending' ? '任务已提交，正在等待后台接收。你可以离开，稍后从工作台继续查看。' : job.status === 'running' ? '正在依据公开样本处理研究。你可以离开页面，任务会继续执行。' : job.status === 'cancelled' ? `任务已取消，已产生的用量会保留。${job.can_retry ? '可以重试任务，或修改研究范围创建新任务。' : job.can_revise ? '可修改研究范围创建新任务。' : '请从工作台查看其他研究。'}` : job.status === 'failed' ? '这次研究暂未完成。请查看下方原因，再决定重试或修改范围。' : '研究记录已保存。'}</p>
 
             {job.revision_of_job_id && <p className="mt-4 text-sm text-muted-foreground">修订自 <Link href={`/jobs/${job.revision_of_job_id}`} className="font-mono font-semibold text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{job.revision_of_job_id.slice(0, 8)}</Link></p>}
 
@@ -129,7 +195,7 @@ export default function JobPage() {
               <Card className="mt-6 p-5 sm:p-6">
                 <p className="eyebrow">范围修订</p>
                 <h2 className="mt-2 text-lg font-bold">创建修订任务</h2>
-                <p className="mt-1 text-sm text-muted-foreground">旧任务和回答会保留。</p>
+                <p className="mt-1 text-sm leading-7 text-muted-foreground">旧任务和回答会保留。修订将创建新任务，并占用 1 次本月额度。</p>
                 <label htmlFor="revision-query" className="mt-4 block text-sm font-semibold">新的研究范围</label>
                 <Textarea id="revision-query" className="mt-2 min-h-24" maxLength={2000} value={revisionQuery} onChange={(event) => setRevisionQuery(event.target.value)} />
                 {revisionError && <p className="mt-2 text-sm text-destructive" role="alert">{revisionError}</p>}
@@ -174,12 +240,12 @@ export default function JobPage() {
             )}
 
             <Card className="mt-7 overflow-hidden p-0">
-              <div className="bg-secondary px-5 py-5 text-secondary-foreground sm:px-7"><div className="flex items-center justify-between gap-4"><div><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">Execution timeline</p><h2 className="mt-1 font-bold">任务执行进度</h2></div><span className="font-mono text-2xl font-black tabular-nums">{job.progress}%</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="任务执行进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-[width]" style={{ width: `${job.progress}%` }} /></div></div>
+              <div className="studio-hero px-5 py-6 sm:px-7"><div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Research journal</p><h2 className="mt-2 font-display text-xl">这份研究的进展</h2></div><span className="font-mono text-2xl tabular-nums text-[#dfbd85]">{job.progress}%</span></div><div className="mt-5 h-1 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="任务执行进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress}><div className="h-full rounded-full bg-[#d8b477] transition-[width]" style={{ width: `${job.progress}%` }} /></div></div>
               <div className="p-5 sm:p-7"><JobProgress status={job.status} events={events} /></div>
             </Card>
 
             {job.error_message && <Card className="mt-4 border-destructive/30 p-5"><p className="eyebrow text-destructive">Job interrupted</p><h2 className="mt-1 font-bold text-destructive">任务未完成</h2><p className="break-content mt-2 text-sm leading-6 text-muted-foreground">{job.error_message}</p><p className="mt-3 font-mono text-xs text-muted-foreground">{job.error_code}</p></Card>}
-            <p className="mt-5 text-center text-xs text-muted-foreground">可安全刷新，任务状态已持久化。</p>
+            <p className="mt-5 text-center text-xs leading-6 text-muted-foreground">任务状态已保存。{lastUpdated && `最近更新 ${lastUpdated.toLocaleTimeString('zh-CN')}`} · 同一任务重试不重复占用次数。</p>
           </>
         )}
       </div>

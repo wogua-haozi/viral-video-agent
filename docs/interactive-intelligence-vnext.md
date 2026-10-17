@@ -1,5 +1,7 @@
 # 交互式竞争情报 vNext
 
+> 本篇为 2026-07 冻结设计与工程记录，旧 vNext-D/E 路线暂缓。当前任务见 [项目状态](project-status.md)。本轮允许整合稳定性、证据与交互修复，当前用量累计、恢复与时间过滤语义以 [创作者试用契约](creator-pilot-20261017.md) 为准；P0-C 失败和 vNext-C 工程冻结不变。
+
 ## 产品目标
 
 vNext-A 在现有 Agent MVP 之前增加一个可持久暂停的研究范围澄清闭环：模糊输入不立即进入 Planner、Researcher、MCP、ASR 或搜索；系统先形成一个严格的 `BriefDecision`，必要时把 Job 持久化为 `waiting_user`。用户回答后恢复同一个 Job，最多澄清两轮，形成 `TopicSpec` 后再执行现有 LangGraph。vNext-C0 补齐 B 站稳定 MID 身份；vNext-C 再把 v2 图拆成 Collection 与 Synthesis 两阶段，让用户在原始 Evidence 快照上逐项确认候选账号后继续同一个 Job。

@@ -1,5 +1,6 @@
 # Environment variables (contains API keys)
 .env
+viral-video-agent-new/
 backups/*
 !backups/.gitkeep
 .venv/

@@ -32,7 +32,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <div className="mb-7 border-b pb-7"><p className="eyebrow">Account / 04</p><h1 className="title-balance mt-2 text-3xl font-black tracking-[-.045em] sm:text-4xl">账号与用量</h1><p className="mt-2 text-sm text-muted-foreground">查看账号状态、月度分析用量与数据分享边界。</p></div>
+      <div className="mb-7 border-b pb-7"><p className="eyebrow">Account / 04</p><h1 className="title-balance mt-2 font-display text-3xl font-semibold leading-snug sm:text-4xl">账号与用量</h1><p className="mt-2 text-sm text-muted-foreground">查看账号状态、月度分析用量与数据分享边界。</p></div>
       {error ? <ErrorState description={error} /> : !user || !usage ? <LoadingState label="正在读取账号信息" /> : (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="space-y-6">

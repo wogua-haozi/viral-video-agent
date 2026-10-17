@@ -7,6 +7,7 @@ from src.utils.fallback_counter import fallback_counter
 from src.utils.trace_tracker import trace_tracker
 from src.prompts.manager import prompt_manager
 from src.config import MCP_SERVER_URL
+from src.utils.asr_usage_tracker import asr_usage_tracker
 
 
 ALLOWED_TOOLS = {"search_videos", "rag_search", "get_transcript", "get_trend_data"}
@@ -76,12 +77,17 @@ async def call_tool_via_mcp(tool_name: str, params: dict):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, params)
-                return _unwrap_mcp_result(result)
+                value = _unwrap_mcp_result(result)
+                if tool_name == "get_transcript":
+                    # Record before transport cleanup can await/cancel. This
+                    # non-throwing recorder also deduplicates local transports.
+                    asr_usage_tracker.record(value)
     except MCPToolExecutionError:
         raise
     except Exception as e:
         print(f"[Researcher] MCP调用失败，回退到直接调用: {e}")
         return await call_tool(tool_name, params)
+    return value
 
 
 async def researcher_node(state: AgentState) -> dict:

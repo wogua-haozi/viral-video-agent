@@ -73,6 +73,7 @@ class JobRead(BaseModel):
     can_retry: bool
     can_revise: bool
     can_confirm_candidates: bool
+    is_stopping: bool = False
     topic_spec: TopicSpec | None = None
     interaction_usage: dict = Field(default_factory=dict)
     error_code: str | None

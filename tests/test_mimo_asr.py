@@ -127,6 +127,8 @@ async def test_bvid_cache_hit_skips_audio_extraction_and_provider(monkeypatch):
         "model": "mimo-v2.5-asr",
         "audio_hash": "abc",
         "source_url": "https://www.bilibili.com/video/BV1xx411c7mD",
+        "asr_seconds": 60,
+        "asr_usage_receipt": {"id": "old-cached-call", "seconds": 60},
     }
 
     async def fake_cache_get(key):
@@ -141,7 +143,12 @@ async def test_bvid_cache_hit_skips_audio_extraction_and_provider(monkeypatch):
 
     result = await transcript_module.get_transcript(cached["source_url"])
 
-    assert result == cached
+    assert result["text"] == cached["text"]
+    assert result["audio_seconds"] == 60
+    assert result["asr_seconds"] == 0
+    assert result["asr_usage_receipt"] is None
+    assert result["cache_hit"] is True
+    assert cached["asr_seconds"] == 60  # Reading a cache must not mutate its payload.
 
 
 def test_audio_extraction_limits_compressed_output_not_source_file(monkeypatch, tmp_path):

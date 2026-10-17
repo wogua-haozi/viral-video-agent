@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import uuid
-from datetime import datetime, timezone
+from contextvars import Context, ContextVar, copy_context
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from arq import Retry, cron
 from arq.connections import RedisSettings
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from src.agents.analyst import analyst_node
 from src.agents.writer import writer_node
@@ -31,35 +34,107 @@ from src.config import (
     DEFAULT_LLM_PROVIDER,
     ENABLE_CANDIDATE_CONFIRMATION,
     ENABLE_INTERACTIVE_BRIEF,
+    GRAPH_VERSION,
     JOB_MAX_RETRIES,
     JOB_TIMEOUT_SECONDS,
     REDIS_URL,
     WORKER_MAX_JOBS,
 )
 from src.db.models import (
+    AnalysisJob,
     CandidateAccount,
     CandidateSnapshot,
     CollectionSnapshot,
     EvidenceItem,
     JobEvent,
     Report,
-    UsageRecord,
 )
 from src.db.session import async_session_factory
 from src.dispatch import reconcile_pending_dispatches
 from src.gateway.cost_tracker import cost_tracker
 from src.gateway.model_bootstrap import configure_optional_model_routes
 from src.graph.builder import build_graph
-from src.graph.v2 import build_collection_graph_v2, build_synthesis_graph_v2, stable_evidence_id
+from src.graph.v2 import build_collection_graph_v2, build_synthesis_graph_v2, evidence_gate_node, stable_evidence_id
 from src.reporting.validation import finalize_report, validate_claims, validate_report_references
-from src.repositories import CandidateRepository, JobRepository
+from src.repositories import CandidateRepository, JobRepository, UsageRepository
 from src.tools.transcript import TranscriptError, get_transcript
+from src.utils.asr_usage_tracker import ASRUsageState, asr_usage_tracker
 from src.utils.fallback_counter import fallback_counter
 from src.utils.trace_tracker import trace_tracker
 
 graph = build_graph()
 collection_graph = build_collection_graph_v2()
 synthesis_graph = build_synthesis_graph_v2()
+logger = logging.getLogger(__name__)
+WORKER_LEASE_SECONDS = 90
+WORKER_HEARTBEAT_SECONDS = 5
+
+
+class _JobStopped(asyncio.CancelledError):
+    """The owner cancelled the job, or this execution no longer owns it."""
+
+
+@dataclass
+class _Execution:
+    job_id: uuid.UUID
+    version: int
+    token: str
+    cost_context: Context
+    brief_baseline: dict
+    phase: str = "analysis"
+    asr_usage: ASRUsageState = field(default_factory=ASRUsageState)
+
+    @property
+    def asr_seconds(self) -> float:
+        return self.asr_usage.asr_seconds
+
+    def cost(self, job: AnalysisJob, *, final: bool = False) -> dict:
+        cost = self.cost_context.run(cost_tracker.get_summary)
+        if self.phase == "brief":
+            # BriefValidator records completed calls in interaction_usage. Do
+            # not also checkpoint those calls as graph usage while it runs.
+            if not final:
+                return {}
+            interaction = job.interaction_usage or {}
+            for field, interaction_field in (
+                ("input_tokens", "input_tokens"),
+                ("output_tokens", "output_tokens"),
+                ("total_cost", "estimated_cost"),
+            ):
+                recorded = max(0, interaction.get(interaction_field, 0) - self.brief_baseline.get(interaction_field, 0))
+                cost[field] = max(0, cost[field] - recorded)
+        return cost
+
+
+_execution: ContextVar[_Execution | None] = ContextVar("worker_execution", default=None)
+
+
+def _owns_execution(job: AnalysisJob, execution: _Execution | None = None) -> bool:
+    execution = execution or _execution.get()
+    return execution is None or (
+        job.id == execution.job_id
+        and job.execution_version == execution.version
+        and job.worker_token == execution.token
+    )
+
+
+async def _settle_usage(db, job: AnalysisJob, *, phase: str, asr_seconds: float = 0, final: bool = False):
+    execution = _execution.get()
+    attempt_id = execution.token if execution else f"legacy:{job.execution_version}:{phase}"
+    cost = execution.cost(job, final=final) if execution else cost_tracker.get_summary()
+    # A result may contain cached audio durations. Owned attempts use the
+    # unified completed-call tracker, including direct and remote tool calls.
+    seconds = execution.asr_seconds if execution else asr_seconds
+    return await UsageRepository(db).settle_attempt(job, attempt_id, cost, seconds)
+
+
+async def _cancel_and_wait(*tasks: asyncio.Task) -> None:
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    # Retrieve exceptions as well as await cleanup; no detached graph or
+    # heartbeat may survive its owning execution.
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _select_transcript_candidates(raw_data: list[dict], limit: int, max_seconds: int = ASR_MAX_VIDEO_SECONDS) -> list[str]:
@@ -76,18 +151,29 @@ def _select_transcript_candidates(raw_data: list[dict], limit: int, max_seconds:
     return candidates[:limit]
 
 
-async def _event(job_id: uuid.UUID, event_type: str, message: str, progress: int, level: str = "info", redis=None) -> None:
-    async with async_session_factory() as db:
-        job = await JobRepository(db).get(job_id)
-        if job:
-            job.progress = progress
-            await JobRepository(db).save(job)
-            await JobRepository(db).add_event(job_id, event_type, message, progress, level)
-    if redis:
+async def _publish_event(job_id: uuid.UUID, event_type: str, message: str, progress: int, level: str = "info", redis=None) -> None:
+    if redis is None:
+        return
+    try:
         await redis.hset(f"job:{job_id}:status", mapping={"status": event_type, "message": message, "progress": progress})
         await redis.expire(f"job:{job_id}:status", 86400)
         await redis.xadd(f"job:{job_id}:events", {"event_type": event_type, "message": message, "progress": progress, "level": level}, maxlen=200)
         await redis.expire(f"job:{job_id}:events", 86400)
+    except Exception:
+        # PostgreSQL events are authoritative. A cache outage must not repeat
+        # paid analysis after its report has already committed.
+        logger.warning("Redis event projection failed for job %s (%s)", job_id, event_type, exc_info=True)
+
+
+async def _event(job_id: uuid.UUID, event_type: str, message: str, progress: int, level: str = "info", redis=None) -> None:
+    async with async_session_factory() as db:
+        job = await JobRepository(db).get_for_update(job_id)
+        if not job or not _owns_execution(job) or job.status == "cancelled":
+            raise _JobStopped
+        job.progress = progress
+        db.add(JobEvent(job_id=job_id, event_type=event_type, message=message, progress=progress, level=level))
+        await db.commit()
+    await _publish_event(job_id, event_type, message, progress, level, redis)
 
 
 def _initial_state(user_id: uuid.UUID, query: str, platforms: list[str], topic_spec: dict | None = None) -> dict:
@@ -107,20 +193,29 @@ def _initial_state(user_id: uuid.UUID, query: str, platforms: list[str], topic_s
 
 
 async def _invoke_compiled_graph(compiled_graph, job_id: uuid.UUID, execution_version: int, state: dict) -> dict:
+    execution = _execution.get()
+    thread_id = f"{job_id}:{execution_version}"
+    if execution:
+        # Automatic retries retain execution_version, but must not append new
+        # evidence to an abandoned attempt's in-memory graph checkpoint.
+        thread_id += f":{execution.token}"
     task = asyncio.create_task(
         compiled_graph.ainvoke(
             state,
-            config={"configurable": {"thread_id": f"{job_id}:{execution_version}"}},
+            config={"configurable": {"thread_id": thread_id}},
         )
     )
-    while not task.done():
-        await asyncio.sleep(1.5)
-        async with async_session_factory() as db:
-            current = await JobRepository(db).get(job_id)
-            if not current or current.status == "cancelled" or current.execution_version != execution_version:
-                task.cancel()
-                raise asyncio.CancelledError
-    return await task
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=1.5)
+            if done:
+                return await task
+            async with async_session_factory() as db:
+                current = await JobRepository(db).get(job_id)
+                if not current or current.status != "running" or current.execution_version != execution_version or not _owns_execution(current):
+                    raise _JobStopped
+    finally:
+        await _cancel_and_wait(task)
 
 
 async def _invoke_graph(job_id: uuid.UUID, user_id: uuid.UUID, query: str, platforms: list[str], topic_spec: dict | None = None, execution_version: int = 0) -> dict:
@@ -232,24 +327,31 @@ def _error_code(exc: Exception) -> tuple[str, bool]:
     return "WORKER_FAILED", True
 
 
-def _interaction_totals(job, current_cost: dict) -> dict:
-    interaction = job.interaction_usage or {}
-    return {
-        "input_tokens": int(current_cost["input_tokens"]) + int(interaction.get("input_tokens", 0)),
-        "output_tokens": int(current_cost["output_tokens"]) + int(interaction.get("output_tokens", 0)),
-        "estimated_cost": round(float(current_cost["total_cost"]) + float(interaction.get("estimated_cost", 0.0)), 6),
-    }
-
-
 async def _persist_collection_snapshot(job_id: uuid.UUID, execution_version: int, result: dict) -> dict:
-    current_cost = cost_tracker.get_summary()
+    # Candidate identity is a separate contract from sample sufficiency. Never
+    # turn a collection failure into an analyzable snapshot merely because its
+    # tool output contains an account ID.
+    if not result.get("termination_reason"):
+        result = {**result, **evidence_gate_node(result)}
+    if result.get("termination_reason") or not result.get("data_sufficient"):
+        report_id = await _persist_result(job_id, {
+            **result,
+            "_expected_execution_version": execution_version,
+        })
+        return {"report_id": str(report_id), "candidate_count": 0}
+
     async with async_session_factory() as db:
         job = await JobRepository(db).get_for_update(job_id)
-        if not job or job.status == "cancelled" or job.status != "running" or job.execution_version != execution_version:
-            raise asyncio.CancelledError
+        if not job or job.status != "running" or job.execution_version != execution_version or not _owns_execution(job):
+            raise _JobStopped
 
-        collection_usage = _interaction_totals(job, current_cost)
-        collection_usage["asr_seconds"] = float(result.get("asr_seconds", 0))
+        usage = await _settle_usage(db, job, phase="collection", asr_seconds=float(result.get("asr_seconds", 0)))
+        collection_usage = {
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "estimated_cost": usage.estimated_cost,
+            "asr_seconds": usage.asr_seconds,
+        }
         payload = collection_snapshot_payload(
             source_execution_version=execution_version,
             result=result,
@@ -309,22 +411,6 @@ async def _persist_collection_snapshot(job_id: uuid.UUID, execution_version: int
             values.pop("decision")
             db.add(CandidateAccount(snapshot_id=candidate_snapshot.id, sort_order=sort_order, **values))
 
-        usage = await db.scalar(select(UsageRecord).where(UsageRecord.job_id == job.id))
-        if usage:
-            usage.input_tokens = collection_usage["input_tokens"]
-            usage.output_tokens = collection_usage["output_tokens"]
-            usage.estimated_cost = collection_usage["estimated_cost"]
-            usage.asr_seconds = collection_usage["asr_seconds"]
-        else:
-            db.add(UsageRecord(
-                user_id=job.user_id,
-                job_id=job.id,
-                input_tokens=collection_usage["input_tokens"],
-                output_tokens=collection_usage["output_tokens"],
-                estimated_cost=collection_usage["estimated_cost"],
-                asr_seconds=collection_usage["asr_seconds"],
-            ))
-
         if candidates:
             job.status = "waiting_candidate_confirmation"
             job.progress = 55
@@ -375,7 +461,7 @@ async def _load_synthesis_state(job_id: uuid.UUID, execution_version: int) -> di
     async with async_session_factory() as db:
         job = await JobRepository(db).get(job_id)
         run = await CandidateRepository(db).synthesis_run(job_id, execution_version)
-        if not job or job.status != "running" or job.execution_version != execution_version or not run:
+        if not job or job.status != "running" or job.execution_version != execution_version or not _owns_execution(job) or not run:
             raise ValueError("CANDIDATE_SNAPSHOT_INVALID: synthesis run not found")
         batch = run.decision_batch
         snapshot = batch.snapshot
@@ -488,7 +574,6 @@ async def _load_synthesis_state(job_id: uuid.UUID, execution_version: int) -> di
             "evidence": selected_evidence,
             "tool_results": collection.tool_results,
             "search_queries_used": collection.search_queries_used,
-            "data_sufficient": True,
             "user_request": (
                 f"{job.query}\n\n用户已确认本次只分析以下候选账号："
                 + "、".join(confirmed_names)
@@ -504,6 +589,10 @@ async def _load_synthesis_state(job_id: uuid.UUID, execution_version: int) -> di
                 "excluded_count": excluded_count,
             },
         })
+        # Selecting accounts can reduce a previously sufficient collection
+        # below the configured sample minimum. Recheck the selected snapshot
+        # without searching again or invoking any paid tool.
+        state.update(evidence_gate_node(state))
         return state
 
 
@@ -532,7 +621,10 @@ def _parse_fetched_at(value: object) -> datetime:
 async def _persist_result(job_id: uuid.UUID, result: dict) -> uuid.UUID:
     evidence = result.get("evidence", [])
     claims = result.get("analysis", {}).get("claims", [])
-    valid, reason = validate_claims(claims, evidence)
+    partial_without_analysis = bool(result.get("report_final")) and result.get("termination_reason") in {
+        "insufficient_evidence", "tool_unavailable", "unsupported_platform", "invalid_topic_spec",
+    }
+    valid, reason = validate_claims(claims, evidence, allow_empty=partial_without_analysis)
     if not valid:
         raise ValueError(f"REPORT_VALIDATION_FAILED: {reason}")
     report_source = result.get("report_final", "") + _candidate_boundary_markdown(result.get("candidate_boundary"))
@@ -540,7 +632,6 @@ async def _persist_result(job_id: uuid.UUID, result: dict) -> uuid.UUID:
     valid, reason = validate_report_references(content, evidence)
     if not valid:
         raise ValueError(f"REPORT_VALIDATION_FAILED: {reason}")
-    cost = cost_tracker.get_summary()
     trace = trace_tracker.get_summary()
     status = "completed" if result.get("report_final") and not result.get("termination_reason") else "partial"
     expected_execution_version = result.get("_expected_execution_version")
@@ -551,14 +642,22 @@ async def _persist_result(job_id: uuid.UUID, result: dict) -> uuid.UUID:
             not job
             or job.status == "cancelled"
             or (expected_execution_version is not None and job.execution_version != expected_execution_version)
+            or not _owns_execution(job)
         ):
-            raise asyncio.CancelledError
+            raise _JobStopped
+        execution_version = job.execution_version
+        existing = next((report for report in job.reports if report.model_info.get("execution_version", execution_version) == execution_version), None)
+        if existing:
+            return existing.id
+        if job.status != "running":
+            raise _JobStopped
         model_info = {
             "provider": DEFAULT_LLM_PROVIDER,
             "model": DEFAULT_LLM_MODEL_ID,
             "workflow": result.get("workflow_version", "v2"),
             "trace": trace,
             "fallback": fallback_counter.get_summary(),
+            "execution_version": execution_version,
         }
         boundary = result.get("candidate_boundary")
         if boundary:
@@ -596,136 +695,246 @@ async def _persist_result(job_id: uuid.UUID, result: dict) -> uuid.UUID:
                 transcript_segment=item.get("transcript_segment"),
             ))
 
-        usage = await db.scalar(select(UsageRecord).where(UsageRecord.job_id == job.id))
-        if result.get("_candidate_synthesis") and usage:
-            usage.input_tokens += int(cost["input_tokens"])
-            usage.output_tokens += int(cost["output_tokens"])
-            usage.estimated_cost = round(usage.estimated_cost + float(cost["total_cost"]), 6)
-        else:
-            totals = _interaction_totals(job, cost)
-            if usage:
-                usage.input_tokens = totals["input_tokens"]
-                usage.output_tokens = totals["output_tokens"]
-                usage.estimated_cost = totals["estimated_cost"]
-                usage.asr_seconds = float(result.get("asr_seconds", usage.asr_seconds))
-            else:
-                db.add(UsageRecord(
-                    user_id=job.user_id,
-                    job_id=job.id,
-                    input_tokens=totals["input_tokens"],
-                    output_tokens=totals["output_tokens"],
-                    estimated_cost=totals["estimated_cost"],
-                    asr_seconds=float(result.get("asr_seconds", 0)),
-                ))
+        await _settle_usage(db, job, phase="report", asr_seconds=float(result.get("asr_seconds", 0)))
         job.status, job.progress, job.completed_at = status, 100, datetime.now(timezone.utc)
         if status == "partial":
             job.error_code, job.error_message = "EVIDENCE_INSUFFICIENT", ERROR_MESSAGES["EVIDENCE_INSUFFICIENT"]
+        else:
+            job.error_code = job.error_message = None
+        db.add(JobEvent(
+            job_id=job.id,
+            event_type=status,
+            message="报告已生成。" if status == "completed" else "已保存可用的部分结果。",
+            progress=100,
+            level="info",
+        ))
         await db.commit()
         return report.id
 
 
-async def run_analysis_job(ctx: dict, job_id_value: str, execution_version_value: int | None = None) -> None:
-    job_id = uuid.UUID(job_id_value)
-    redis = ctx.get("redis")
+async def _claim_job(job_id: uuid.UUID, expected_version: int | None):
+    token = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
     async with async_session_factory() as db:
-        repo = JobRepository(db)
-        job = await repo.get(job_id)
-        if not job or job.status != "pending":
-            return
-        if execution_version_value is not None and job.execution_version != int(execution_version_value):
-            return
+        filters = [AnalysisJob.id == job_id, AnalysisJob.status == "pending"]
+        if expected_version is not None:
+            filters.append(AnalysisJob.execution_version == int(expected_version))
+        claimed = await db.execute(
+            update(AnalysisJob)
+            .where(*filters)
+            .values(
+                status="running", started_at=now, completed_at=None,
+                error_code=None, error_message=None, dispatch_pending_at=None,
+                worker_token=token,
+                worker_lease_expires_at=now + timedelta(seconds=WORKER_LEASE_SECONDS),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if claimed.rowcount != 1:
+            await db.rollback()
+            return None
+        job = await JobRepository(db).get_for_update(job_id)
         synthesis_run = (
             await CandidateRepository(db).synthesis_run(job.id, job.execution_version)
-            if ENABLE_CANDIDATE_CONFIRMATION
-            else None
+            if ENABLE_CANDIDATE_CONFIRMATION else None
         )
-        job.status, job.started_at, job.error_code, job.error_message = "running", datetime.now(timezone.utc), None, None
-        job.dispatch_pending_at = None
-        await repo.save(job)
-        user_id = job.user_id
-        query = job.query
-        platforms = job.platforms
-        retry_count = job.retry_count
-        analysis_mode = job.analysis_mode
-        execution_version = job.execution_version
+        await db.commit()
+        return job, synthesis_run is not None, token
+
+
+async def _heartbeat(execution: _Execution) -> None:
+    while True:
+        await asyncio.sleep(WORKER_HEARTBEAT_SECONDS)
+        async with async_session_factory() as db:
+            # CAS also supplies SQLite's write lock; a stale worker must never
+            # extend the lease belonging to its replacement.
+            renewed = await db.execute(
+                update(AnalysisJob)
+                .where(
+                    AnalysisJob.id == execution.job_id,
+                    AnalysisJob.execution_version == execution.version,
+                    AnalysisJob.worker_token == execution.token,
+                    AnalysisJob.status == "running",
+                )
+                .values(worker_lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=WORKER_LEASE_SECONDS))
+                .execution_options(synchronize_session=False)
+            )
+            job = await JobRepository(db).get_for_update(execution.job_id)
+            if renewed.rowcount != 1:
+                terminal = job is not None and _owns_execution(job, execution) and job.status in {
+                    "waiting_user", "waiting_candidate_confirmation", "completed", "partial",
+                }
+                await db.rollback()
+                if terminal:
+                    return
+                raise _JobStopped
+            await _settle_usage(db, job, phase="heartbeat")
+            await db.commit()
+
+
+async def _supervise(coroutine, execution: _Execution):
+    work = asyncio.create_task(coroutine)
+    heartbeat = asyncio.create_task(_heartbeat(execution))
+    try:
+        done, _ = await asyncio.wait({work, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+        if work in done:
+            return await work
+        await heartbeat
+        return await work
+    finally:
+        await _cancel_and_wait(work, heartbeat)
+
+
+async def _finish_attempt(execution: _Execution, *, interrupted: bool = False, failure: tuple[str, bool] | None = None) -> tuple[bool, int | None]:
+    """Settle once per token; never change a replacement execution's state."""
+    async with async_session_factory() as db:
+        job = await JobRepository(db).get_for_update(execution.job_id)
+        if not job:
+            return False, None
+        await _settle_usage(db, job, phase="final", final=True)
+        owns = _owns_execution(job, execution)
+        interrupted_running = owns and job.status == "running"
+        retry_delay = None
+        if owns:
+            if job.status == "running" and (interrupted or failure):
+                code, retryable = failure or ("WORKER_FAILED", True)
+                if retryable and job.retry_count < JOB_MAX_RETRIES:
+                    job.retry_count += 1
+                    job.status = "pending"
+                    # Arq retains this execution's queue identity when Retry or
+                    # infrastructure cancellation propagates to the worker.
+                    retry_delay = 2 ** job.retry_count * 5
+                    db.add(JobEvent(
+                        job_id=job.id, event_type="queued", progress=job.progress, level="warning",
+                        message=("Worker 执行中断，已保存用量并等待恢复。" if interrupted else f"临时故障，{retry_delay} 秒后自动重试。"),
+                    ))
+                else:
+                    job.status = "failed"
+                    job.completed_at = datetime.now(timezone.utc)
+                    job.error_code = code
+                    job.error_message = ERROR_MESSAGES.get(code, ERROR_MESSAGES["WORKER_FAILED"])
+                    db.add(JobEvent(job_id=job.id, event_type="failed", message=job.error_message, progress=job.progress, level="error"))
+            elif job.status == "running":
+                # All successful paths end in a report or a durable waiting
+                # state. Treat an accidental early return as a visible failure.
+                job.status = "failed"
+                job.error_code = "WORKER_FAILED"
+                job.error_message = ERROR_MESSAGES["WORKER_FAILED"]
+                job.completed_at = datetime.now(timezone.utc)
+                db.add(JobEvent(job_id=job.id, event_type="failed", message=job.error_message, progress=job.progress, level="error"))
+            job.worker_token = None
+            job.worker_lease_expires_at = None
+        await db.commit()
+        return interrupted_running, retry_delay
+
+
+async def _execute_job(ctx: dict, job: AnalysisJob, synthesis_run: bool, execution: _Execution) -> None:
+    job_id, execution_version = job.id, job.execution_version
+    redis = ctx.get("redis")
+    topic_spec = None
+    if ENABLE_INTERACTIVE_BRIEF and not synthesis_run:
+        brief_result = await validate_job_brief(job_id, expected_execution_version=execution_version)
+        # The service committed these calls to interaction_usage. Capture the
+        # new Context so the parent/heartbeat see graph usage after this reset.
+        cost_tracker.reset()
+        execution.cost_context = copy_context()
+        execution.phase = "analysis"
+        if not brief_result.ready:
+            return
+        topic_spec = brief_result.topic_spec.model_dump(mode="json") if brief_result.topic_spec else None
+        async with async_session_factory() as db:
+            current = await JobRepository(db).get(job_id)
+            if not current or current.status != "running" or not _owns_execution(current):
+                raise _JobStopped
+
+    async with ctx["provider_semaphore"]:
+        if synthesis_run:
+            await _event(job_id, "analyzing", "正在从已确认的采集快照恢复并生成报告。", 70, redis=redis)
+            state = await _load_synthesis_state(job_id, execution_version)
+            if state.get("data_sufficient") and not state.get("termination_reason"):
+                result = await _invoke_synthesis_graph(job_id, execution_version, state)
+            else:
+                result = state
+            result["candidate_boundary"] = state["candidate_boundary"]
+            result["_candidate_synthesis"] = True
+        elif ENABLE_CANDIDATE_CONFIRMATION:
+            await _event(job_id, "collecting", "正在采集B站数据并形成候选账号快照。", 15, redis=redis)
+            result = await _invoke_collection_graph(job_id, job.user_id, job.query, job.platforms, topic_spec, execution_version)
+            result["topic_spec"] = topic_spec or result.get("topic_spec") or {}
+            if job.analysis_mode == "deep" and result.get("data_sufficient") and not result.get("termination_reason"):
+                result = await _collect_transcript_evidence(result, job_id, redis)
+            await _persist_collection_snapshot(job_id, execution_version, result)
+            return
+        elif job.analysis_mode == "deep" and GRAPH_VERSION == "v2":
+            await _event(job_id, "collecting", "正在采集B站样本，准备视频内容转写。", 15, redis=redis)
+            result = await _invoke_collection_graph(job_id, job.user_id, job.query, job.platforms, topic_spec, execution_version)
+            if result.get("data_sufficient") and not result.get("termination_reason"):
+                result = await _collect_transcript_evidence(result, job_id, redis)
+                await _event(job_id, "analyzing", "正在基于采集与转写证据生成分析报告。", 70, redis=redis)
+                asr_seconds = result.get("asr_seconds", 0)
+                result = await _invoke_synthesis_graph(job_id, execution_version, result)
+                result["asr_seconds"] = asr_seconds
+        else:
+            await _event(job_id, "collecting", "正在采集B站数据并检索知识库。", 15, redis=redis)
+            result = await _invoke_graph(job_id, job.user_id, job.query, job.platforms, topic_spec, execution_version)
+            if job.analysis_mode == "deep":
+                # Preserve the opt-in legacy v1 contract. The v2 path above
+                # performs synthesis once, after transcript evidence arrives.
+                result = await _enrich_deep_analysis(result, job_id, redis)
+
+    result["_expected_execution_version"] = execution_version
+    await _event(job_id, "validating", "正在校验 Evidence 与结构化结论。", 78, redis=redis)
+    await _event(job_id, "persisting", "正在保存报告、证据和用量记录。", 92, redis=redis)
+    await _persist_result(job_id, result)
+    final_status = "completed" if result.get("report_final") and not result.get("termination_reason") else "partial"
+    # The terminal database event commits atomically with the report. Only its
+    # optional Redis projection remains after that transaction.
+    await _publish_event(job_id, final_status, "报告已生成。" if final_status == "completed" else "已保存可用的部分结果。", 100, redis=redis)
+
+
+async def run_analysis_job(ctx: dict, job_id_value: str, execution_version_value: int | None = None) -> None:
+    job_id = uuid.UUID(job_id_value)
+    claimed = await _claim_job(job_id, execution_version_value)
+    if claimed is None:
+        return
+    job, synthesis_run, token = claimed
     cost_tracker.reset()
+    asr_usage = asr_usage_tracker.reset()
     fallback_counter.reset()
     trace_tracker.reset()
+    execution = _Execution(
+        job_id=job.id, version=job.execution_version, token=token,
+        cost_context=copy_context(), brief_baseline=dict(job.interaction_usage or {}),
+        phase="brief" if ENABLE_INTERACTIVE_BRIEF and not synthesis_run else "analysis",
+        asr_usage=asr_usage,
+    )
+    context_token = _execution.set(execution)
     try:
-        topic_spec = None
-        if ENABLE_INTERACTIVE_BRIEF and not synthesis_run:
-            brief_result = await validate_job_brief(job_id, expected_execution_version=execution_version)
-            if not brief_result.ready:
-                return
-            topic_spec = brief_result.topic_spec.model_dump(mode="json") if brief_result.topic_spec else None
-            cost_tracker.reset()
-            async with async_session_factory() as db:
-                current = await JobRepository(db).get(job_id)
-                if not current or current.status != "running" or current.execution_version != execution_version:
-                    return
-
-        async with ctx["provider_semaphore"]:
-            if synthesis_run:
-                await _event(job_id, "analyzing", "正在从已确认的采集快照恢复并生成报告。", 70, redis=redis)
-                state = await _load_synthesis_state(job_id, execution_version)
-                result = await asyncio.wait_for(
-                    _invoke_synthesis_graph(job_id, execution_version, state),
-                    timeout=JOB_TIMEOUT_SECONDS,
-                )
-                result["candidate_boundary"] = state["candidate_boundary"]
-                result["_candidate_synthesis"] = True
-            elif ENABLE_CANDIDATE_CONFIRMATION:
-                await _event(job_id, "collecting", "正在采集B站数据并形成候选账号快照。", 15, redis=redis)
-                result = await asyncio.wait_for(
-                    _invoke_collection_graph(job_id, user_id, query, platforms, topic_spec, execution_version),
-                    timeout=JOB_TIMEOUT_SECONDS,
-                )
-                result["topic_spec"] = topic_spec or result.get("topic_spec") or {}
-                if analysis_mode == "deep":
-                    result = await _collect_transcript_evidence(result, job_id, redis)
-                await _persist_collection_snapshot(job_id, execution_version, result)
-                return
-            else:
-                await _event(job_id, "collecting", "正在采集B站数据并检索知识库。", 15, redis=redis)
-                result = await asyncio.wait_for(
-                    _invoke_graph(job_id, user_id, query, platforms, topic_spec, execution_version),
-                    timeout=JOB_TIMEOUT_SECONDS,
-                )
-                if analysis_mode == "deep":
-                    result = await _enrich_deep_analysis(result, job_id, redis)
-
-        result["_expected_execution_version"] = execution_version
-        await _event(job_id, "validating", "正在校验 Evidence 与结构化结论。", 78, redis=redis)
-        await _event(job_id, "persisting", "正在保存报告、证据和用量记录。", 92, redis=redis)
-        await _persist_result(job_id, result)
-        final_status = "partial" if result.get("termination_reason") else "completed"
-        await _event(job_id, final_status, "报告已生成。" if final_status == "completed" else "已保存可用的部分结果。", 100, redis=redis)
+        # Includes Brief, provider-slot waiting, collection, ASR, synthesis and
+        # persistence. Arq's extra 30 seconds are reserved for cancellation and
+        # settlement, rather than allowing ASR to escape the job budget.
+        await asyncio.wait_for(
+            _supervise(_execute_job(ctx, job, synthesis_run, execution), execution),
+            timeout=JOB_TIMEOUT_SECONDS,
+        )
+    except _JobStopped:
+        await _finish_attempt(execution)
     except asyncio.CancelledError:
-        return
+        interrupted_running, _ = await _finish_attempt(execution, interrupted=True)
+        if interrupted_running:
+            raise
     except Exception as exc:
         code, retryable = _error_code(exc)
         if "REPORT_VALIDATION_FAILED" in str(exc):
             code, retryable = "REPORT_VALIDATION_FAILED", False
-        if code in {"REPORT_VALIDATION_FAILED", "CANDIDATE_SNAPSHOT_INVALID"}:
-            print(f"[worker] {code}: {str(exc)[:240]}")
-        else:
-            print(f"[worker] {code}: {type(exc).__name__}")
-        async with async_session_factory() as db:
-            repo = JobRepository(db)
-            job = await repo.get(job_id)
-            if not job or job.status == "cancelled":
-                return
-            if retryable and retry_count < JOB_MAX_RETRIES:
-                job.retry_count += 1
-                job.status = "pending"
-                await repo.save(job)
-                await repo.add_event(job_id, "queued", f"临时故障，{2 ** job.retry_count * 5} 秒后自动重试。", job.progress, "warning")
-                raise Retry(defer=2 ** job.retry_count * 5) from exc
-            job.status = "failed"
-            job.error_code = code
-            job.error_message = ERROR_MESSAGES.get(code, ERROR_MESSAGES["WORKER_FAILED"])
-            await repo.save(job)
-            await repo.add_event(job_id, "failed", job.error_message, job.progress, "error")
+        logger.warning("Analysis job %s failed (%s): %s", job_id, code, type(exc).__name__)
+        _, retry_delay = await _finish_attempt(execution, failure=(code, retryable))
+        if retry_delay is not None:
+            raise Retry(defer=retry_delay) from exc
+    else:
+        await _finish_attempt(execution)
+    finally:
+        _execution.reset(context_token)
 
 
 async def startup(ctx: dict) -> None:

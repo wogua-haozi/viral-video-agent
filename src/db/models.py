@@ -27,6 +27,7 @@ class AnalysisJob(Base):
         UniqueConstraint("user_id", "idempotency_key", name="uq_job_user_idempotency"),
         Index("ix_jobs_user_created", "user_id", "created_at"),
         Index("ix_analysis_jobs_pending_dispatch", "status", "dispatch_pending_at"),
+        Index("ix_analysis_jobs_worker_lease", "status", "worker_lease_expires_at"),
     )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -44,6 +45,8 @@ class AnalysisJob(Base):
     interaction_usage: Mapped[dict] = mapped_column(JSON, default=dict)
     idempotency_key: Mapped[str] = mapped_column(String(128))
     arq_job_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    worker_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    worker_lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -62,9 +65,24 @@ class AnalysisJob(Base):
 
     @property
     def can_retry(self) -> bool:
-        return self.status in {"failed", "cancelled", "partial"} and not any(
+        from src.config import JOB_MAX_RETRIES
+
+        return self.retry_count < JOB_MAX_RETRIES and not self.has_active_worker and self.status in {"failed", "cancelled", "partial"} and not any(
             item.status == "pending" for item in self.clarifications
         )
+
+    @property
+    def has_active_worker(self) -> bool:
+        if not self.worker_token or not self.worker_lease_expires_at:
+            return False
+        expires_at = self.worker_lease_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at > utcnow()
+
+    @property
+    def is_stopping(self) -> bool:
+        return self.status == "cancelled" and self.has_active_worker
 
     @property
     def can_revise(self) -> bool:
@@ -129,11 +147,12 @@ class UsageRecord(Base):
     __tablename__ = "usage_records"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("analysis_jobs.id", ondelete="CASCADE"), unique=True)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("analysis_jobs.id", name="fk_usage_records_job_id", ondelete="SET NULL"), nullable=True, unique=True)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     estimated_cost: Mapped[float] = mapped_column(Float, default=0)
     asr_seconds: Mapped[float] = mapped_column(Float, default=0)
+    accounted_attempts: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

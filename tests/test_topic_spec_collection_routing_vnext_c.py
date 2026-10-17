@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -136,6 +137,7 @@ def fake_collection_dependencies(monkeypatch):
             "profile_url": "https://space.bilibili.com/12345",
             "author": "虚构路由账号",
             "url": "https://www.bilibili.com/video/BV0000000001",
+            "pubdate": int((datetime.now(timezone.utc) - timedelta(days=1)).timestamp()),
         }]
 
     async def fake_direct(user_request):

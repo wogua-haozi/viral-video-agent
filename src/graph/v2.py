@@ -2,7 +2,8 @@
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
@@ -191,6 +192,66 @@ def stable_evidence_id(tool_name: str, item: dict) -> str:
     return f"ev_{hashlib.sha256(f'{tool_name}|{identity}'.encode()).hexdigest()[:16]}"
 
 
+def _video_published_at(item: dict) -> datetime | None:
+    """Read a supplied publication date; collection time is never a substitute."""
+    timestamp = item.get("pubdate")
+    if not isinstance(timestamp, bool) and isinstance(timestamp, (int, float, str)):
+        try:
+            if float(timestamp) > 0:
+                return datetime.fromtimestamp(float(timestamp), timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            pass
+    value = item.get("published_at")
+    if isinstance(value, str):
+        try:
+            published_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if published_at.tzinfo is not None:
+                return published_at.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return None
+
+
+def _filter_video_time_window(
+    data: list, topic_spec: dict | None, *, now: datetime | None = None
+) -> tuple[list, dict]:
+    if not topic_spec:
+        return data, {}
+    days = topic_spec.get("time_window_days")
+    if not isinstance(days, int) or isinstance(days, bool) or days < 1:
+        raise ValueError("validated TopicSpec must include time_window_days")
+    window_end = now or datetime.now(timezone.utc)
+    window_start = window_end - timedelta(days=days)
+    window = {
+        "time_window_days": days,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+    }
+    outcome = {
+        **window,
+        "received_count": len(data),
+        "accepted_count": 0,
+        "excluded_unknown_publication": 0,
+        "excluded_outside_window": 0,
+    }
+    accepted = []
+    for item in data:
+        published_at = _video_published_at(item) if isinstance(item, dict) else None
+        if published_at is None:
+            outcome["excluded_unknown_publication"] += 1
+        elif not window_start <= published_at <= window_end:
+            outcome["excluded_outside_window"] += 1
+        else:
+            accepted.append({
+                **item,
+                "pubdate": int(published_at.timestamp()),
+                "published_at": published_at.isoformat(),
+                "_time_window": window,
+            })
+    outcome["accepted_count"] = len(accepted)
+    return accepted, outcome
+
+
 def _build_evidence_items(tool_name: str, params: dict, data: list) -> tuple[list, list[dict]]:
     normalized_data, evidence_items = [], []
     fetched_at = datetime.now(timezone.utc).isoformat()
@@ -198,7 +259,7 @@ def _build_evidence_items(tool_name: str, params: dict, data: list) -> tuple[lis
     data_field_names = {
         "bvid", "author", "platform_account_id", "display_name", "profile_url",
         "view", "danmaku", "reply", "favorite", "coin", "share", "like",
-        "duration", "pubdate", "aid",
+        "duration", "pubdate", "published_at", "aid",
     }
     for raw_item in data:
         if not isinstance(raw_item, dict):
@@ -288,14 +349,21 @@ async def researcher_v2_node(state: AgentState) -> dict:
             outcome["params"] = normalized_params
             raw_result = await call_tool_via_mcp(tool_name, normalized_params)
             fetched_data = raw_result if isinstance(raw_result, list) else ([] if raw_result is None else [raw_result])
-            unique_data = dedupe_new_data(fetched_data, state.get("raw_data", []))
+            eligible_data = fetched_data
+            if tool_name == "search_videos":
+                eligible_data, time_filter = _filter_video_time_window(fetched_data, state.get("topic_spec"))
+                if time_filter:
+                    outcome["time_filter"] = time_filter
+            unique_data = dedupe_new_data(eligible_data, state.get("raw_data", []))
             raw_data, evidence = _build_evidence_items(tool_name, normalized_params, unique_data)
             if raw_data:
                 outcome["status"] = "success"
             elif unique_data:
                 outcome["status"] = "invalid_result"
-            elif fetched_data:
+            elif eligible_data:
                 outcome["status"] = "duplicate_only"
+            elif fetched_data:
+                outcome["status"] = "outside_time_scope"
             else:
                 outcome["status"] = "empty"
             fallback_counter.log("researcher_v2", "json")
@@ -325,19 +393,83 @@ def route_research(state: AgentState) -> str:
     return "evidence_gate"
 
 
+def _is_bilibili_video_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname in {"bilibili.com", "www.bilibili.com", "m.bilibili.com"}
+            and parsed.path.startswith("/video/")
+        )
+    except ValueError:
+        return False
+
+
+def _is_video_sample(item: dict) -> bool:
+    fields = item.get("data_fields") or {}
+    raw = item.get("raw_data") or {}
+    return bool(
+        item.get("tool") == "search_videos"
+        and item.get("source_type") == "bilibili_video"
+        and item.get("platform") == "bilibili"
+        and (fields.get("bvid") or raw.get("bvid"))
+        and item.get("title")
+        and _is_bilibili_video_url(item.get("source_url"))
+    )
+
+
+def _requires_video_samples(state: AgentState) -> bool:
+    return bool(
+        state.get("topic_spec")
+        or requires_current_video_data(state.get("user_request", ""))
+        or any(
+            task.get("evidence_type") in {"search", "transcript", "trend"}
+            for task in state.get("research_tasks", [])
+        )
+        or any(item.get("tool") == "search_videos" for item in state.get("tool_results", []))
+    )
+
+
 def evidence_gate_node(state: AgentState) -> dict:
-    evidence = state.get("evidence", [])
-    evidence_count = len(evidence)
-    if evidence_count >= V2_MIN_EVIDENCE_ITEMS:
+    evidence = [item for item in state.get("evidence", []) if isinstance(item, dict) and item.get("evidence_id")]
+    video_samples = [item for item in evidence if _is_video_sample(item)]
+    transcript_samples = [
+        item for item in evidence
+        if not state.get("topic_spec")
+        and item.get("tool") == "get_transcript"
+        and _is_bilibili_video_url(item.get("source_url"))
+        and ((item.get("raw_data") or {}).get("text") or (item.get("transcript_segment") or {}).get("text"))
+    ]
+    requires_samples = _requires_video_samples(state)
+    sample_urls = {urlsplit(item["source_url"]).path.rstrip("/") for item in video_samples + transcript_samples}
+    supporting_count = len(sample_urls) if requires_samples else len(evidence)
+    if supporting_count >= max(1, V2_MIN_EVIDENCE_ITEMS):
         return {"data_sufficient": True}
 
     outcomes = state.get("tool_results", [])
     statuses = sorted({item.get("status", "unknown") for item in outcomes})
     reason = "tool_unavailable" if "unavailable" in statuses else "insufficient_evidence"
+    knowledge_count = sum(item.get("source_type") == "knowledge_base" for item in evidence)
     message = (
         "# 分析未完成\n\n"
-        "当前没有获得足以支持结论的真实数据或知识库证据，因此系统没有继续生成爆款规律。\n\n"
-        f"工具结果状态：{', '.join(statuses) if statuses else 'no_tool_result'}。"
+        "本次未获得研究范围内足以支持结论的证据，已保留可用资料，没有生成爆款规律或竞品结论。\n\n"
+        f"有效视频样本：{len(video_samples)} 条；知识库方法论或历史资料：{knowledge_count} 条。\n\n"
+    )
+    if requires_samples and knowledge_count:
+        message += "知识库资料仅提供方法论或历史背景，不能替代本次请求所需的视频样本。\n\n"
+    filters = [item["time_filter"] for item in outcomes if item.get("time_filter")]
+    if state.get("topic_spec"):
+        days = state["topic_spec"].get("time_window_days")
+        unknown = sum(item["excluded_unknown_publication"] for item in filters)
+        outside = sum(item["excluded_outside_window"] for item in filters)
+        message += (
+            f"时间范围：采集时点之前 {days} 天。发布日期缺失 {unknown} 条、超出时间范围 {outside} 条，均未纳入分析。\n\n"
+        )
+    message += (
+        f"工具结果状态：{', '.join(statuses) if statuses else 'no_tool_result'}。\n\n"
+        "可调整研究主题或时间范围，或稍后重新采集；当前资料不代表整个平台或整个行业。"
     )
     return {
         "data_sufficient": False,

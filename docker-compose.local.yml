@@ -1,0 +1,9 @@
+# Optional Windows development override. Keep the existing project/volume names.
+# This does not make an existing database safe to migrate; read docs/local-development.md.
+services:
+  redis:
+    ports: !override
+      - "127.0.0.1:6387:6379"
+  nginx:
+    ports: !override
+      - "127.0.0.1:8087:80"

@@ -9,7 +9,7 @@ export default function ExamplesPage() {
     <main className="editorial-grid min-h-[calc(100dvh-4rem)] border-b">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
         <div className="grid gap-8 border-b pb-9 lg:grid-cols-[.8fr_1.2fr] lg:items-end">
-          <div><p className="eyebrow">Sample archive / 01</p><h1 className="title-balance mt-3 text-4xl font-black tracking-[-.05em] sm:text-5xl">先看清证据如何进入报告</h1></div>
+          <div><p className="eyebrow">Sample archive / 01</p><h1 className="title-balance mt-3 font-display text-4xl font-semibold leading-snug sm:text-5xl">先看清证据如何进入报告</h1></div>
           <div className="lg:justify-self-end"><p className="max-w-xl text-pretty leading-7 text-muted-foreground">示例用于展示产品结构，不代表实时市场结论。公开测试生成的报告会使用当次任务的真实 Evidence。</p><div className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-success"><ShieldCheck className="h-4 w-4" aria-hidden="true" />单平台边界与来源标记保持可见</div></div>
         </div>
 

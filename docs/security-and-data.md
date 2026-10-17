@@ -5,7 +5,7 @@
 - 邮箱唯一，密码使用 Argon2
 - JWT 只保存在 HttpOnly Cookie，不进入 localStorage
 - `SameSite=Lax`；`APP_ENV=production` 时自动启用 `Secure`
-- 生产环境未配置强 `JWT_SECRET` 时拒绝启动
+- 生产环境仍使用默认开发 `JWT_SECRET` 时拒绝启动；当前代码不验证任意自定义 Secret 的强度，部署者须配置足够随机的 Secret
 - Next.js middleware 做页面级拦截，FastAPI 对每个资源再次验证身份与所有者
 
 ## 所有权

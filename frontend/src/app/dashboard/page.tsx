@@ -1,47 +1,55 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowRight, ArrowUpRight, Clock3, FilePlus2, NotebookPen } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { JobSummaryCard, UsageCard } from '@/components/product';
-import { Card, EmptyState, ErrorState, LinkButton, LoadingState } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, LinkButton, LoadingState } from '@/components/ui';
 import { getUsage, listJobs, readableError, type Job, type UsageSummary } from '@/lib/api';
 
-const templates = ['B站赛道爆款分析', '竞品账号内容拆解', '热门标题结构分析', '选题方向分析'];
+const templates = [
+  ['B站赛道爆款分析', '赛道观察', '找出代表内容与选题线索'],
+  ['竞品账号内容拆解', '账号研究', '看清定位、选题与表达方式'],
+  ['热门标题结构分析', '标题细读', '拆解受众、承诺与吸引力'],
+  ['选题方向分析', '下一条内容', '找到值得验证的创作方向'],
+];
 
 export default function DashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [attention, setAttention] = useState<Job[]>([]);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    Promise.all([listJobs('?limit=5'), getUsage()])
-      .then(([jobData, usageData]) => { setJobs(jobData.items); setUsage(usageData); })
-      .catch((err) => setError(readableError(err)))
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const [jobData, usageData, briefData, candidateData] = await Promise.all([
+        listJobs('?limit=6'), getUsage(), listJobs('?status=waiting_user&limit=5'), listJobs('?status=waiting_candidate_confirmation&limit=5'),
+      ]);
+      setJobs(jobData.items); setUsage(usageData); setAttention([...briefData.items, ...candidateData.items]);
+    } catch (err) { setError(readableError(err)); }
+    finally { setLoading(false); }
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   return (
     <AppShell>
-      <div className="mb-8 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-end">
-        <div><p className="eyebrow">Dashboard / 01</p><h1 className="title-balance mt-2 text-3xl font-black tracking-[-.045em] sm:text-4xl">你的 B 站分析工作台</h1><p className="mt-2 text-sm text-muted-foreground">查看最近任务、用量和常用分析入口。</p></div>
-        <LinkButton href="/jobs/new">新建分析<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton>
-      </div>
-
-      {loading ? <LoadingState label="正在加载工作台" /> : error ? <ErrorState description={error} /> : (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-          <section aria-labelledby="recent-jobs-title">
-            <div className="mb-3 flex items-center justify-between gap-4"><div><p className="eyebrow">Recent queue</p><h2 id="recent-jobs-title" className="mt-1 text-lg font-bold">最近任务</h2></div><Link href="/history" className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">查看全部<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link></div>
-            <div className="space-y-3">{jobs.length ? jobs.map((job) => <JobSummaryCard key={job.id} id={job.id} title={job.query} status={job.status} progress={job.progress} createdAt={job.created_at} />) : <Card><EmptyState title="还没有分析任务" description="从一个赛道、选题或竞品问题开始。" action={<LinkButton href="/jobs/new">创建第一个任务</LinkButton>} /></Card>}</div>
-          </section>
-          <aside className="space-y-5">
+      <section className="studio-hero mb-8 overflow-hidden rounded-xl border p-6 sm:p-9">
+        <div className="flex flex-col justify-between gap-7 xl:flex-row xl:items-end">
+          <div><p className="eyebrow">Your research desk</p><h1 className="mt-4 font-display text-3xl font-medium leading-snug sm:text-4xl">下一条好内容，<br className="sm:hidden" />从一个好问题开始。</h1><p className="mt-4 max-w-xl text-sm leading-7 text-[#c9b99f]">你的研究、样本与创作线索，都留在这里。</p></div>
+          <LinkButton href="/jobs/new" className="self-start border-[#d8b477] bg-[#d8b477] text-[#251b10] shadow-none hover:bg-[#e6c894]"><FilePlus2 className="h-4 w-4" aria-hidden="true" />新建研究</LinkButton>
+        </div>
+      </section>
+      {loading ? <LoadingState label="正在整理你的研究记录" /> : error ? <ErrorState description={error} action={<Button onClick={load}>重新读取</Button>} /> : (
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="min-w-0 space-y-8">
+            {attention.length > 0 && <section aria-labelledby="attention-title" className="rounded-xl border border-primary/35 bg-primary/5 p-5"><div className="mb-3 flex items-center gap-2"><Clock3 className="h-4 w-4 text-primary" aria-hidden="true" /><h2 id="attention-title" className="font-display text-lg font-semibold">需要你继续</h2></div><div className="divide-y">{attention.map((job) => <Link key={job.id} href={`/jobs/${job.id}`} className="flex min-h-14 items-center justify-between gap-4 rounded-sm py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><div className="min-w-0"><p className="break-content text-sm font-semibold">{job.query}</p><p className="mt-1 text-xs text-muted-foreground">{job.status === 'waiting_user' ? '补充研究范围后，任务会继续' : '确认哪些账号应纳入这次分析'}</p></div><ArrowRight className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" /></Link>)}</div><Link href="/history" className="mt-3 inline-flex min-h-11 items-center text-xs font-semibold text-primary underline underline-offset-4">查看全部任务</Link></section>}
+            <section aria-labelledby="recent-jobs-title"><div className="mb-4 flex items-end justify-between gap-4 border-b pb-4"><div><p className="eyebrow">Research journal</p><h2 id="recent-jobs-title" className="mt-2 font-display text-2xl font-semibold">最近的研究</h2></div><Link href="/history" className="inline-flex min-h-11 items-center gap-2 rounded-sm text-xs font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">全部记录<ArrowUpRight className="h-4 w-4" aria-hidden="true" /></Link></div><div className="space-y-3">{jobs.length ? jobs.map((job) => <JobSummaryCard key={job.id} id={job.id} title={job.query} status={job.status} progress={job.progress} createdAt={job.created_at} />) : <Card><EmptyState title="第一篇研究，等你开始" description="例如：研究 B 站近 30 天的 AI 编程教程，重点看标题与开场。" action={<LinkButton href="/jobs/new">写下第一个问题</LinkButton>} /></Card>}</div></section>
+          </div>
+          <aside className="space-y-6">
             {usage && <UsageCard usage={usage} />}
-            <Card className="p-5">
-              <div className="flex items-start gap-3 border-b pb-4"><div className="grid h-10 w-10 place-items-center rounded-lg border bg-accent/10 text-accent"><Sparkles className="h-4 w-4" aria-hidden="true" /></div><div><p className="eyebrow text-accent">Quick start</p><h2 className="mt-1 font-bold">快捷模板</h2></div></div>
-              <div className="mt-2 divide-y">{templates.map((item, index) => <Link key={item} href={`/jobs/new?template=${encodeURIComponent(item)}`} className="group grid min-h-14 grid-cols-[2rem_1fr_auto] items-center gap-2 py-2 text-sm font-semibold transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="font-mono text-[10px] text-muted-foreground">0{index + 1}</span><span>{item}</span><ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" /></Link>)}</div>
-            </Card>
+            <section><div className="mb-3 flex items-center gap-2 border-b pb-4"><NotebookPen className="h-4 w-4 text-primary" aria-hidden="true" /><h2 className="font-display text-lg font-semibold">选一个研究起点</h2></div><div className="divide-y">{templates.map(([template, title, description], index) => <Link key={template} href={`/jobs/new?template=${encodeURIComponent(template)}`} className="group flex gap-4 rounded-sm py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="mt-1 font-mono text-xs text-primary">0{index + 1}</span><div><h3 className="text-sm font-semibold group-hover:text-primary">{title}</h3><p className="mt-1.5 text-xs leading-6 text-muted-foreground">{description}</p></div></Link>)}</div></section>
           </aside>
         </div>
       )}

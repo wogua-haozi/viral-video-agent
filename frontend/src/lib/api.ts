@@ -6,7 +6,7 @@ export interface JobEvent { event_type: string; message: string; progress: numbe
 export interface ClarificationOption { id: string; label: string; description: string; }
 export interface ClarificationRequest { request_id: string; round: number; question: string; options: ClarificationOption[]; allow_custom: boolean; status: 'pending' | 'answered'; selected_option_id?: string | null; custom_answer?: string | null; answered_at?: string | null; }
 export interface ClarificationState { job_id: string; max_rounds: number; current: ClarificationRequest | null; history: ClarificationRequest[]; }
-export interface Job { id: string; query: string; platforms: string[]; analysis_mode: AnalysisMode; status: JobStatus; progress: number; clarification_round: number; execution_version: number; revision_of_job_id?: string | null; can_retry: boolean; can_revise: boolean; can_confirm_candidates: boolean; topic_spec?: Record<string, unknown> | null; interaction_usage?: Record<string, unknown>; error_code?: string | null; error_message?: string | null; report_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; events?: JobEvent[]; }
+export interface Job { id: string; query: string; platforms: string[]; analysis_mode: AnalysisMode; status: JobStatus; progress: number; clarification_round: number; execution_version: number; revision_of_job_id?: string | null; can_retry: boolean; can_revise: boolean; can_confirm_candidates: boolean; is_stopping?: boolean; topic_spec?: Record<string, unknown> | null; interaction_usage?: Record<string, unknown>; error_code?: string | null; error_message?: string | null; report_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; events?: JobEvent[]; }
 export type CandidateDecision = 'undecided' | 'confirmed' | 'excluded' | 'uncertain';
 export interface CandidateEvidenceLink { evidence_id: string; title: string; source_url: string; }
 export interface CandidateAccount { candidate_id: string; platform: 'bilibili'; platform_account_id: string; display_name: string; profile_url: string; source_evidence_ids: string[]; matched_video_count: number; sample_titles: string[]; evidence_links: CandidateEvidenceLink[]; why_surfaced: string[]; identity_confidence: 'high'; decision: CandidateDecision; reason: string; }
@@ -35,14 +35,14 @@ export const logout = () => request<void>('/auth/logout', { method: 'POST' });
 export const getCurrentUser = () => request<User>('/auth/me');
 export const createJob = (data: { query: string; analysis_mode: AnalysisMode; idempotency_key: string }) => request<Job>('/jobs', { method: 'POST', body: JSON.stringify({ ...data, platforms: ['bilibili'] }) });
 export const listJobs = (params = '') => request<{ items: Job[]; total: number }>(`/jobs${params}`);
-export const getJob = (id: string) => request<Job>(`/jobs/${id}`);
+export const getJob = (id: string, signal?: AbortSignal) => request<Job>(`/jobs/${id}`, { signal });
 export const cancelJob = (id: string) => request<Job>(`/jobs/${id}/cancel`, { method: 'POST' });
 export const retryJob = (id: string) => request<Job>(`/jobs/${id}/retry`, { method: 'POST' });
 export const reviseJob = (id: string, data: { query: string; idempotency_key: string }) => request<Job>(`/jobs/${id}/revisions`, { method: 'POST', body: JSON.stringify(data) });
-export const getJobEvents = (id: string) => request<{ items: JobEvent[] }>(`/jobs/${id}/events`);
-export const getJobClarification = (id: string) => request<ClarificationState>(`/jobs/${id}/clarification`);
+export const getJobEvents = (id: string, signal?: AbortSignal) => request<{ items: JobEvent[] }>(`/jobs/${id}/events`, { signal });
+export const getJobClarification = (id: string, signal?: AbortSignal) => request<ClarificationState>(`/jobs/${id}/clarification`, { signal });
 export const answerJobClarification = (id: string, data: { request_id: string; selected_option_id?: string; custom_answer?: string }) => request<Job>(`/jobs/${id}/clarification`, { method: 'POST', body: JSON.stringify(data) });
-export const getJobCandidates = (id: string) => request<CandidateSnapshot>(`/jobs/${id}/candidates`);
+export const getJobCandidates = (id: string, signal?: AbortSignal) => request<CandidateSnapshot>(`/jobs/${id}/candidates`, { signal });
 export const submitCandidateDecisions = (id: string, data: { request_id: string; snapshot_id: string; decisions: { candidate_id: string; decision: Exclude<CandidateDecision, 'undecided'>; reason?: string }[] }) => request<Job>(`/jobs/${id}/candidates/decisions`, { method: 'POST', body: JSON.stringify(data) });
 export const getReport = (id: string) => request<Report>(`/reports/${id}`);
 export const deleteJob = (id: string) => request<void>(`/jobs/${id}`, { method: 'DELETE' });

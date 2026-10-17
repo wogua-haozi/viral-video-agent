@@ -1,0 +1,42 @@
+{
+  "fixtureOnly": true,
+  "executedAt": "2026-10-17T15:39:20.357Z",
+  "platform": "win32",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "mobile hash navigation closes drawer",
+    "new inquiry form fits a 320px viewport",
+    "lost creation responses reuse one idempotency key, including after reload",
+    "unresolved submission restores the query after reload",
+    "candidate choices and reasons survive failed polling and reload",
+    "missing candidate decision receives keyboard focus",
+    "candidate submission resumes the existing job once",
+    "cancelled job keeps polling while stopping, then stops after settlement",
+    "cancelled copy respects the server retry limit",
+    "citation opens evidence; actual zero, missing values, published and fetched time stay distinct",
+    "Bilibili knowledge references are not classified as video samples",
+    "confidence is labeled as uncalibrated model self-assessment",
+    "expanded report and evidence fit a 320px viewport",
+    "dark theme printing uses light paper tokens and hides duplicate detail panels",
+    "initial evidence deep links expand and scroll after asynchronous report load",
+    "login-to-registration preserves the selected template destination",
+    "no unhandled browser page errors"
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    "home-desktop-dark.png",
+    "home-hero-dark.png",
+    "home-mobile-dark.png",
+    "dashboard-desktop-dark.png",
+    "dashboard-desktop-light.png",
+    "new-job-desktop-light.png",
+    "new-job-mobile-light.png",
+    "job-progress-desktop-light.png",
+    "candidates-desktop-light.png",
+    "candidates-mobile-dark.png",
+    "report-desktop-dark.png",
+    "report-desktop-light.png",
+    "evidence-desktop-light.png",
+    "report-mobile-light.png"
+  ]
+}

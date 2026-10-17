@@ -1,4 +1,6 @@
+import math
 import re
+from datetime import datetime, timezone
 from html import unescape
 
 import httpx
@@ -99,31 +101,45 @@ def _clean_bilibili_title(value: object) -> str:
     return unescape(re.sub(r"<[^>]+>", "", value)).strip()
 
 
-def _bilibili_count(value: object) -> int:
+def _bilibili_count(value: object) -> int | None:
+    """Keep unavailable counters distinct from a provider's actual zero."""
     if isinstance(value, bool):
-        return 0
-    if isinstance(value, (int, float)):
-        return max(0, int(value))
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value >= 0 and value.is_integer() else None
     if isinstance(value, str):
         normalized = value.replace(",", "").strip()
-        return int(normalized) if normalized.isdigit() else 0
-    return 0
+        return int(normalized) if normalized.isascii() and normalized.isdigit() else None
+    return None
 
 
-def _bilibili_duration_seconds(value: object) -> int:
+def _bilibili_duration_seconds(value: object) -> int | None:
     if isinstance(value, bool):
-        return 0
+        return None
     if isinstance(value, (int, float)):
-        return max(0, int(value))
+        return _bilibili_count(value)
     if not isinstance(value, str):
-        return 0
+        return None
     parts = value.strip().split(":")
-    if not parts or any(not part.isdigit() for part in parts):
-        return 0
+    if not parts or any(not part.isascii() or not part.isdigit() for part in parts):
+        return None
     seconds = 0
     for part in parts:
         seconds = seconds * 60 + int(part)
     return seconds
+
+
+def _publication_fields(value: object) -> dict:
+    timestamp = _bilibili_count(value)
+    if timestamp is not None and timestamp > 0:
+        try:
+            published_at = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+            return {"pubdate": timestamp, "published_at": published_at}
+        except (OverflowError, OSError, ValueError):
+            pass
+    return {"pubdate": None, "published_at": None}
 
 
 def _parse_bilibili_search_result(item: dict) -> dict:
@@ -136,6 +152,7 @@ def _parse_bilibili_search_result(item: dict) -> dict:
     like_count = _bilibili_count(item.get("like"))
     reply_count = _bilibili_count(item.get("review"))
     favorite_count = _bilibili_count(item.get("favorites"))
+    share_count = _bilibili_count(item.get("share"))
     return {
         "platform": "bilibili",
         "bvid": bvid,
@@ -153,11 +170,12 @@ def _parse_bilibili_search_result(item: dict) -> dict:
         "comment": reply_count,
         "comments": reply_count,
         "reply": reply_count,
-        "share": 0,
-        "shares": 0,
-        "coin": 0,
+        "share": share_count,
+        "shares": share_count,
+        "coin": _bilibili_count(item.get("coin")),
         "favorite": favorite_count,
         "duration": _bilibili_duration_seconds(item.get("duration")),
+        **_publication_fields(item.get("pubdate")),
         "url": item.get("arcurl") or (f"https://www.bilibili.com/video/{bvid}" if bvid else ""),
     }
 
@@ -270,12 +288,12 @@ async def search_videos(keyword: str, platforms: list[str], limit: int = 10) -> 
 
 
 def _parse_bilibili(item: dict) -> dict:
-    stat = item.get("stat", {})
+    stat = item.get("stat") if isinstance(item.get("stat"), dict) else {}
     identity = _parse_bilibili_account_identity(item.get("owner"))
-    view_count = stat.get("view", 0)
-    like_count = stat.get("like", 0)
-    comment_count = stat.get("reply", 0)
-    share_count = stat.get("share", 0)
+    view_count = _bilibili_count(stat.get("view"))
+    like_count = _bilibili_count(stat.get("like"))
+    comment_count = _bilibili_count(stat.get("reply"))
+    share_count = _bilibili_count(stat.get("share"))
     return {
         "platform": "bilibili",
         "bvid": item.get("bvid", ""),
@@ -295,8 +313,9 @@ def _parse_bilibili(item: dict) -> dict:
         "reply": comment_count,
         "share": share_count,
         "shares": share_count,
-        "coin": stat.get("coin", 0),
-        "favorite": stat.get("favorite", 0),
-        "duration": item.get("duration", 0),
+        "coin": _bilibili_count(stat.get("coin")),
+        "favorite": _bilibili_count(stat.get("favorite")),
+        "duration": _bilibili_duration_seconds(item.get("duration")),
+        **_publication_fields(item.get("pubdate")),
         "url": f"https://www.bilibili.com/video/{item.get('bvid', '')}",
     }

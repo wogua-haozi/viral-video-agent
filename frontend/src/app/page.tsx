@@ -1,124 +1,58 @@
 import Link from 'next/link';
-import { ArrowRight, BarChart3, Check, FileSearch, Link2, Play, SearchCheck, ShieldCheck, Target } from 'lucide-react';
-import { Card, LinkButton } from '@/components/ui';
+import { ArrowRight, ArrowUpRight, AudioLines, BookOpen, Check, Compass, FileSearch, Quote, Target } from 'lucide-react';
+import { LinkButton } from '@/components/ui';
 
 const templates = [
-  { title: 'B站赛道分析', template: 'B站赛道爆款分析', description: '样本、内容形态、竞争结构。', kicker: 'Track scan', icon: BarChart3, span: 'md:col-span-2' },
-  { title: '竞品账号拆解', template: '竞品账号内容拆解', description: '定位、选题、可复用策略。', kicker: 'Competitor', icon: Target, span: '' },
-  { title: '热门标题分析', template: '热门标题结构分析', description: '钩子、信息密度、受众承诺。', kicker: 'Headline', icon: SearchCheck, span: '' },
-  { title: '选题方向分析', template: '选题方向分析', description: '筛选值得验证的方向。', kicker: 'Topic map', icon: FileSearch, span: '' },
-  { title: '脚本深度分析', template: '内容脚本深度分析', description: '开头、口播、内容结构。', kicker: 'Transcript', icon: Link2, span: 'md:col-span-2 lg:col-span-1' },
-];
-
-const evidenceFeatures = [
-  ['稳定引用', '每条证据都有 evidence_id。'],
-  ['结论门禁', '无引用，不发布。'],
-  ['来源可回看', '一键回到真实来源。'],
-  ['边界透明', '不把个例当规律。'],
+  { title: '找到赛道的内容脉络', template: 'B站赛道爆款分析', description: '从代表视频中观察选题、标题与内容形态。', icon: Compass, number: '01' },
+  { title: '读懂一个竞品账号', template: '竞品账号内容拆解', description: '明确账号定位，梳理值得参考的内容方法。', icon: Target, number: '02' },
+  { title: '拆开标题的吸引力', template: '热门标题结构分析', description: '看清受众、承诺和标题钩子如何组合。', icon: Quote, number: '03' },
+  { title: '为下一条内容找方向', template: '选题方向分析', description: '把样本中的线索，转成可以验证的选题。', icon: BookOpen, number: '04' },
+  { title: '细读脚本与开场', template: '内容脚本深度分析', description: '关注口播与结构；转写能力可用时可选深度分析。', icon: AudioLines, number: '05' },
 ];
 
 export default function HomePage() {
   return (
     <main>
-      <section className="editorial-grid relative overflow-hidden border-b">
-        <div className="absolute right-0 top-0 h-full w-[38%] bg-primary/5 [clip-path:polygon(18%_0,100%_0,100%_100%,0_100%)]" aria-hidden="true" />
-        <div className="speed-lines absolute -right-24 top-10 h-72 w-72 rotate-12 opacity-50" aria-hidden="true" />
-        <div className="mx-auto max-w-7xl px-4 pb-16 pt-8 sm:px-6 sm:pb-20 lg:px-8 lg:pb-24">
-          <div className="motion-enter flex flex-wrap items-center justify-between gap-3 border-y border-foreground/20 py-2 font-mono text-[10px] font-semibold uppercase tracking-[.14em] text-muted-foreground">
-            <span>Viral Video Agent / Research Desk</span><span className="text-primary">Bilibili only · Public samples</span><span>Evidence-led reports</span>
+      <section className="studio-hero overflow-hidden border-b">
+        <div className="mx-auto max-w-7xl px-5 pb-14 pt-7 sm:px-8 sm:pb-20 lg:px-10">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#c8a26b]/25 pb-5 font-mono text-[10px] uppercase tracking-[.2em] text-[#c9b99f]">
+            <span>Viral Video Agent · The creator’s study</span><span>Bilibili / Public research</span>
           </div>
-
-          <div className="grid gap-10 pt-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(25rem,.8fr)] lg:items-center lg:gap-16 lg:pt-16">
-            <div className="motion-enter min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-semibold text-success"><ShieldCheck className="h-4 w-4" aria-hidden="true" />当前仅支持 B 站公开样本</div>
-              <p className="eyebrow mt-7">Content intelligence / 01</p>
-              <h1 className="title-balance mt-4 max-w-4xl text-5xl font-black leading-[.98] tracking-[-.065em] sm:text-6xl lg:text-7xl">真实样本进场，<br /><span className="relative text-primary">可验证结论出片<span className="absolute -bottom-2 left-0 h-2 w-full bg-accent/70" aria-hidden="true" /></span></h1>
-              <p className="mt-7 max-w-xl text-pretty text-lg leading-8 text-muted-foreground">输入赛道或竞品，生成带来源的 B 站内容分析报告。</p>
-              <div className="mt-8 flex flex-wrap gap-3"><LinkButton href="/register" size="lg">开始分析<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton><LinkButton href="/examples" size="lg" variant="secondary">看示例</LinkButton></div>
-              <div className="mt-8 grid max-w-2xl grid-cols-3 border-y py-4">
-                {[['真实来源', '可回看'], ['结构结论', '可验证'], ['B站限定', '边界清晰']].map(([value, label], index) => <div key={label} className="border-r px-3 first:pl-0 last:border-r-0 last:pr-0"><p className="font-mono text-xs font-semibold text-foreground sm:text-sm">{value}</p><p className="mt-1 text-[11px] text-muted-foreground">0{index + 1} / {label}</p></div>)}
+          <div className="grid gap-12 pt-14 lg:grid-cols-[1.08fr_.92fr] lg:items-center lg:gap-14 lg:pt-20">
+            <div className="motion-enter">
+              <p className="eyebrow">内容值得细看，判断需要来处。</p>
+              <h1 className="title-balance mt-6 font-display text-4xl font-medium leading-[1.3] tracking-[.025em] sm:text-5xl lg:text-6xl">让真实样本，<br />照见<span className="text-[#ddb976]">创作方向。</span></h1>
+              <p className="mt-7 max-w-lg text-pretty text-base leading-8 text-[#cec0aa] sm:text-lg">从一个赛道、一个账号，或一个内容问题开始。将 B 站公开样本整理成有出处、可回看的研究报告。</p>
+              <div className="mt-9 flex flex-wrap gap-3">
+                <LinkButton href="/jobs/new" size="lg" className="border-[#d8b477] bg-[#d8b477] text-[#251b10] shadow-none hover:bg-[#e6c894]">开始一次研究<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton>
+                <LinkButton href="/examples" variant="secondary" size="lg" className="border-[#b69a70]/45 bg-transparent text-[#eee3cf] shadow-none hover:bg-white/5 hover:border-[#d8b477]">翻阅示例</LinkButton>
               </div>
+              <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-xs text-[#beaf97]">{['B 站公开样本', '结论关联来源', '保留研究局限'].map((item) => <span key={item} className="inline-flex items-center gap-2"><Check className="h-3.5 w-3.5 text-[#d8b477]" aria-hidden="true" />{item}</span>)}</div>
             </div>
 
-            <Card className="motion-enter-delay relative overflow-hidden bg-surface-elevated p-0 shadow-float">
-              <div className="flex items-center justify-between gap-4 bg-secondary px-5 py-4 text-secondary-foreground">
-                <div><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">Report pipeline</p><p className="mt-1 text-sm font-bold">AI 编程赛道分析</p></div>
-                <span className="rounded-full border border-success/40 bg-success/20 px-2.5 py-1 font-mono text-[10px] font-semibold text-success">Evidence 通过</span>
+            <div className="motion-enter-delay relative lg:pl-5">
+              <div className="studio-frame relative bg-[#2b2117] px-6 pb-7 pt-6 sm:px-8 sm:pb-9">
+                <div className="flex items-center justify-between border-b border-[#cfad75]/25 pb-4"><span className="font-mono text-[10px] tracking-[.18em] text-[#c4a676]">RESEARCH NOTE / 001</span><span className="text-xs text-[#bcac93]">结构示例</span></div>
+                <div className="my-7 flex items-start gap-4"><span className="font-display text-6xl leading-none text-[#bd945d]">“</span><h2 className="pt-1 font-display text-2xl leading-relaxed sm:text-3xl">一个好标题，<br />先让谁看见什么？</h2></div>
+                <p className="border-l border-[#d0ac72]/60 pl-5 text-sm leading-7 text-[#d4c5ad]">把标题中的受众、任务和结果逐项拆开，再回到原视频核对。</p>
+                <div className="mt-8 grid grid-cols-3 divide-x divide-[#cfad75]/20 border-y border-[#cfad75]/25 py-5">{[['观察', '真实样本'], ['推断', '解释线索'], ['建议', '下一次验证']].map(([title, text]) => <div key={title} className="px-3 first:pl-0"><p className="font-display text-xl text-[#e4c492]">{title}</p><p className="mt-2 text-[11px] text-[#beaf97]">{text}</p></div>)}</div>
+                <div className="mt-6 flex items-center gap-3 text-xs text-[#c7b495]"><FileSearch className="h-4 w-4 shrink-0" aria-hidden="true" /><p className="leading-6">正式报告保留来源链接与采集时间。<br />本页示意不代表实际分析结论。</p></div>
               </div>
-              <div className="relative p-5 sm:p-6">
-                <svg className="pointer-events-none absolute right-2 top-2 h-40 w-44 text-primary/20" viewBox="0 0 180 150" fill="none" aria-hidden="true"><path d="M20 115 68 72l34 18 48-62" stroke="currentColor" strokeWidth="2"/><circle cx="20" cy="115" r="6" fill="currentColor"/><circle cx="68" cy="72" r="6" fill="currentColor"/><circle cx="102" cy="90" r="6" fill="currentColor"/><circle cx="150" cy="28" r="6" fill="currentColor"/></svg>
-                <div className="relative space-y-0">
-                  {['采集 8 条样本', '检索 5 条依据', '验证 12 条结论', '生成报告'].map((item, index) => (
-                    <div key={item} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b py-3.5 last:border-b-0">
-                      <span className="grid h-9 w-9 place-items-center rounded-full border border-success/40 bg-success/10 text-success"><Check className="h-4 w-4" aria-hidden="true" /></span>
-                      <span className="text-sm font-semibold">{item}</span><span className="editorial-number">0{index + 1}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="relative mt-5 border-l-4 border-primary bg-primary/10 p-4 text-sm leading-6">高播放标题常见“结果前置 + 明确受众”。<Link href="#evidence" className="ml-2 font-mono text-xs font-semibold text-primary underline underline-offset-4">[ev_bili_01]</Link></div>
-              </div>
-            </Card>
+              <p className="mt-4 text-right font-display text-sm italic tracking-wide text-[#ae9677]">Evidence before conclusions.</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="templates" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
-        <div className="border-b pb-8">
-          <p className="eyebrow">Analysis formats / 02</p>
-          <h2 className="title-balance mt-3 text-4xl font-black tracking-[-.045em] sm:text-5xl">选择分析方式</h2>
-          <p className="mt-3 max-w-xl text-pretty text-base leading-7 text-muted-foreground">选一个模板，也可直接输入需求。</p>
-        </div>
-        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {templates.map(({ title, template, description, kicker, icon: Icon, span }, index) => (
-            <Link key={title} href={`/jobs/new?template=${encodeURIComponent(template)}`} className={`group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${span}`}>
-              <Card className="relative h-full min-h-48 overflow-hidden p-5 transition-[border-color,box-shadow] group-hover:border-primary/40 group-hover:shadow-float sm:p-6">
-                <div className="absolute right-0 top-0 h-16 w-16 border-b border-l bg-muted/60 [clip-path:polygon(100%_0,100%_100%,0_0)]" aria-hidden="true" />
-                <div className="flex items-center justify-between"><span className="grid h-11 w-11 place-items-center rounded-xl border bg-primary/10 text-primary"><Icon className="h-5 w-5" aria-hidden="true" /></span><span className="editorial-number">0{index + 1}</span></div>
-                <p className="eyebrow mt-6">{kicker}</p><h3 className="mt-2 text-xl font-bold tracking-[-.025em]">{title}</h3><p className="mt-2 max-w-md text-pretty text-sm leading-6 text-muted-foreground">{description}</p>
-                <div className="mt-5 flex items-center gap-2 text-xs font-semibold text-primary opacity-70 transition-opacity group-hover:opacity-100">开始分析<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></div>
-              </Card>
-            </Link>
-          ))}
-        </div>
+      <section id="templates" className="mx-auto max-w-7xl scroll-mt-24 px-5 py-14 sm:px-8 sm:py-20 lg:px-10">
+        <div className="flex flex-col justify-between gap-5 border-b pb-7 sm:flex-row sm:items-end"><div><p className="eyebrow">Choose your inquiry</p><h2 className="section-heading mt-3">从你关心的问题开始。</h2></div><p className="max-w-sm text-sm leading-7 text-muted-foreground">选择一个起点，填入研究对象。<br />也可以直接用自己的话描述需求。</p></div>
+        <div className="mt-2 grid md:grid-cols-2">{templates.map(({ title, template, description, icon: Icon, number }, index) => <Link key={template} href={`/jobs/new?template=${encodeURIComponent(template)}`} className={`group flex min-w-0 items-start gap-5 border-b py-7 transition-colors hover:bg-primary/[.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-6 ${index % 2 === 0 ? 'md:pr-8' : 'md:border-l md:pl-8'}`}><span className="mt-1 font-mono text-xs text-primary">{number}</span><div className="min-w-0 flex-1"><div className="mb-4 flex items-center justify-between"><Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" /><ArrowUpRight className="h-4 w-4 text-primary transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div><h3 className="font-display text-xl font-semibold">{title}</h3><p className="mt-3 text-sm leading-7 text-muted-foreground">{description}</p></div></Link>)}</div>
       </section>
 
-      <section id="evidence" className="relative overflow-hidden bg-secondary text-secondary-foreground">
-        <div className="halftone absolute -left-24 -top-24 h-80 w-80 opacity-20" aria-hidden="true" />
-        <div className="speed-lines absolute bottom-0 right-0 h-72 w-[42%] opacity-20" aria-hidden="true" />
-        <div className="relative mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[.8fr_1.2fr] lg:px-8 lg:py-24">
-          <div>
-            <p className="eyebrow">Evidence system / 03</p><h2 className="title-balance mt-4 text-4xl font-black tracking-[-.045em] sm:text-5xl">结论有来源。</h2>
-            <p className="mt-6 max-w-lg text-pretty leading-8 text-secondary-foreground/68">保存真实 URL 和关键字段；证据不足时明确降级。</p>
-            <div className="mt-8 inline-flex items-center gap-3 border-y border-white/20 py-3 text-sm"><span className="grid h-10 w-10 place-items-center rounded-full bg-primary text-primary-foreground"><Play className="h-4 w-4 fill-current" aria-hidden="true" /></span><span><strong className="block">Evidence first</strong><span className="text-xs text-secondary-foreground/60">从可回看的样本开始判断</span></span></div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {evidenceFeatures.map(([title, description], index) => (
-              <div key={title} className="relative min-h-44 border border-white/20 bg-white/[.045] p-5 backdrop-blur-sm sm:p-6">
-                <span className="absolute right-5 top-5 font-mono text-[10px] text-secondary-foreground/40">NODE / 0{index + 1}</span>
-                <span className="mb-7 block h-3 w-3 rounded-full border-4 border-secondary bg-primary ring-1 ring-primary" aria-hidden="true" />
-                <h3 className="text-lg font-bold">{title}</h3><p className="mt-2 text-sm leading-6 text-secondary-foreground/62">{description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      <section id="evidence" className="scroll-mt-24 border-y bg-surface">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 sm:py-16 lg:grid-cols-[.9fr_1.1fr] lg:px-10"><div><p className="eyebrow">The method</p><h2 className="section-heading mt-4">把判断放回证据之中。</h2><p className="mt-5 max-w-md text-sm leading-8 text-muted-foreground">报告区分数据观察、分析推断与行动建议。样本不足时说明局限，让你知道一条建议建立在什么基础上。</p></div><ol className="divide-y border-t">{[['描述研究范围', '写清主题、账号、时间和关心的问题。'], ['整理公开样本', '能力开启时，先补充范围并确认候选账号。'], ['回看证据与结论', '核对实际数据、来源链接，再决定下一步。']].map(([title, description], index) => <li key={title} className="flex gap-5 py-5"><span className="pt-1 font-mono text-xs text-primary">0{index + 1}</span><div><h3 className="font-display text-lg font-semibold">{title}</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p></div></li>)}</ol></div>
       </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
-        <div className="grid gap-10 lg:grid-cols-[.7fr_1.3fr]">
-          <div><p className="eyebrow">Workflow / 04</p><h2 className="title-balance mt-3 text-4xl font-black tracking-[-.045em]">四步完成。</h2></div>
-          <ol className="grid border-t sm:grid-cols-2">
-            {['输入需求', '采集样本', '验证结论', '生成报告'].map((item, index) => <li key={item} className="grid min-h-28 grid-cols-[3rem_1fr] gap-3 border-b p-4 sm:border-r sm:p-5"><span className="font-mono text-2xl font-black text-primary">0{index + 1}</span><span className="text-sm font-semibold leading-6">{item}</span></li>)}
-          </ol>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 sm:pb-20 lg:px-8 lg:pb-24">
-        <div className="relative overflow-hidden bg-primary p-7 text-primary-foreground shadow-float sm:p-9 lg:flex lg:items-center lg:justify-between lg:gap-10">
-          <div className="halftone absolute -right-8 -top-12 h-44 w-44 opacity-20" aria-hidden="true" />
-          <div className="relative"><p className="font-mono text-[10px] font-semibold uppercase tracking-[.16em]">Open beta / Bilibili only</p><h2 className="title-balance mt-2 text-3xl font-black tracking-[-.04em]">开始一个真实需求。</h2><p className="mt-2 text-sm text-primary-foreground/80">仅支持 B 站公开样本。</p></div>
-          <LinkButton href="/register" variant="secondary" size="lg" className="relative mt-6 border-white/50 bg-white text-secondary hover:bg-white/90 lg:mt-0">开始分析<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton>
-        </div>
-      </section>
+      <footer className="mx-auto flex max-w-7xl flex-col justify-between gap-5 px-5 py-9 text-xs text-muted-foreground sm:flex-row sm:items-center sm:px-8 lg:px-10"><p>爆款视频分析 · 专注 B 站公开内容研究</p><Link href="/jobs/new" className="inline-flex min-h-11 items-center gap-3 font-semibold text-primary">打开你的工作台<ArrowRight className="h-4 w-4" aria-hidden="true" /></Link></footer>
     </main>
   );
 }

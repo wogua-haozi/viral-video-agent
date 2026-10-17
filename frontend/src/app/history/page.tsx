@@ -53,7 +53,7 @@ export default function HistoryPage() {
   return (
     <AppShell>
       <div className="mb-7 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-end">
-        <div><p className="eyebrow">Archive / 03</p><h1 className="title-balance mt-2 text-3xl font-black tracking-[-.045em] sm:text-4xl">任务与报告</h1><p className="mt-2 text-sm text-muted-foreground">按关键词、状态和日期查找历史研究。</p></div>
+        <div><p className="eyebrow">Archive / 03</p><h1 className="title-balance mt-2 font-display text-3xl font-semibold leading-snug sm:text-4xl">任务与报告</h1><p className="mt-2 text-sm text-muted-foreground">按关键词、状态和日期查找历史研究。</p></div>
         <LinkButton href="/jobs/new">新建分析<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton>
       </div>
 
@@ -76,7 +76,7 @@ export default function HistoryPage() {
                   <p className="break-content mt-3 font-bold leading-6 transition-colors group-hover:text-primary">{job.query}</p>
                   <p className="mt-1 text-xs text-muted-foreground">B站 · {job.analysis_mode === 'deep' ? '内容深度分析' : '标准分析'} · 进度 {job.progress}%</p>
                 </Link>
-                <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{job.can_retry && <Button variant="secondary" size="sm" onClick={() => retry(job.id)} isLoading={retryingId === job.id}>重试</Button>}<Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => remove(job.id)} disabled={retryingId === job.id}>删除</Button></div>{retryErrors[job.id] && <p className="max-w-xs text-sm text-destructive" role="alert">{retryErrors[job.id]}</p>}</div>
+                <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{job.can_retry && <Button variant="secondary" size="sm" onClick={() => retry(job.id)} isLoading={retryingId === job.id}>重试</Button>}<Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => remove(job.id)} disabled={retryingId === job.id || job.is_stopping}>{job.is_stopping ? '停止中' : '删除'}</Button></div>{retryErrors[job.id] && <p className="max-w-xs text-sm text-destructive" role="alert">{retryErrors[job.id]}</p>}</div>
               </div>
             </Card>
           ))}
