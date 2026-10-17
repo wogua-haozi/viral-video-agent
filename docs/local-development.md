@@ -2,12 +2,16 @@
 
 当前状态、验收和唯一任务清单见 [项目状态](project-status.md)。工作目录始终为 `D:\internship\viral-video-agent`。本轮不访问 GitHub、不部署、不提交真实收费任务。
 
+2026-10-18 已删除本项目 `.venv`、`frontend/node_modules`、`frontend/.next` 和 Python/pytest 缓存，并移除本轮测试下载的 PostgreSQL 镜像。恢复运行需要重新安装依赖或构建/拉取镜像。代码、真实配置、知识资料、验收资源、备份及所有数据卷保留。Docker 不依赖宿主机 `.venv` 或 `node_modules`，仍须先完成下方旧库备份恢复步骤。
+
 ## 前端预览与开发
 
 PowerShell：
 
 ```powershell
 Set-Location D:\internship\viral-video-agent\frontend
+# 清理后首次运行需要恢复依赖；安装完成后无需每次重复
+npm ci
 npm run dev -- --hostname 127.0.0.1 --port 3007
 ```
 
@@ -36,6 +40,14 @@ node tests/creator-pilot.cjs
 
 ## 后端夹具测试与依赖
 
+清理后先恢复本项目独立虚拟环境（不继承全局包）：
+
+```powershell
+Set-Location D:\internship\viral-video-agent
+if (-not (Test-Path .venv\Scripts\python.exe)) { python -m venv .venv }
+.\.venv\Scripts\python.exe -m pip install -e '.[dev]'
+```
+
 ```powershell
 Set-Location D:\internship\viral-video-agent
 .\.venv\Scripts\python.exe -m pytest -q
@@ -51,18 +63,9 @@ $env:PILOT_TEST_POSTGRES_URL='<dedicated-test-database-url>'
 Remove-Item Env:\PILOT_TEST_POSTGRES_URL
 ```
 
-每条 PostgreSQL 测试只迁移随机 schema 并清理自身 schema。无真实收费调用。恢复其他电脑环境时按现有声明安装：
+每条 PostgreSQL 测试只迁移随机 schema 并清理自身 schema。无真实收费调用。
 
-```powershell
-# 仅缺失虚拟环境时创建；不覆盖已有环境
-if (-not (Test-Path .venv\Scripts\python.exe)) { python -m venv .venv }
-.\.venv\Scripts\python.exe -m pip install -e '.[dev]'
-Push-Location frontend
-npm ci
-Pop-Location
-```
-
-本机现有 `.venv` 继承全局包，完整环境的 `pip check` 仍可能包含其他项目的冲突；项目实际测试结果以状态页为准，不为修复它们升级全局包。新的干净环境与 Docker 全栈构建需要另行验证。宿主机深度分析还需要 PATH 中的 `ffmpeg`；Dockerfile 已声明安装。
+2026-10-17 验收时的 `.venv` 曾继承全局包，该本地环境已清理，全局 Python/Node 与其他项目未动。清理前包版本清单保存在忽略目录 `backups/cleanup-20261018/python-packages.json`；这是环境记录，不是经验证的独立锁文件。前端用 `package-lock.json` 和 `npm ci` 恢复；Python 仍按现有版本范围安装，Docker 部分标签也会变动，因此不宣称逐字节复现旧环境。新的干净环境与 Docker 全栈构建仍待验证，恢复后需重新执行检查。宿主机深度分析还需要 PATH 中的 `ffmpeg`；Dockerfile 已声明安装。
 
 ## 完整业务服务：先确认配置和旧库
 

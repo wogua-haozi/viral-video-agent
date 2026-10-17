@@ -8,6 +8,8 @@
 
 当前阶段：本地整合、整理、夹具/隔离迁移验证与计划同步已完成。完整业务运行及真实任务验证仍待完成；后续任务与验收标准以项目状态页为准。
 
+2026-10-18 已清理本项目的本地依赖和构建缓存。源码、配置、知识资料、验收截图与恢复备份保留；再次运行前按 [本地运行手册](docs/local-development.md) 安装依赖或重建 Docker 镜像。
+
 - [项目状态、实际验收与唯一任务清单](docs/project-status.md)
 - [Windows 启动、停止、测试与数据库备份回退](docs/local-development.md)
 - [本轮功能契约与源包历史记录](docs/creator-pilot-20261017.md)
@@ -126,10 +128,11 @@ Compose 包含 8 个服务：`frontend`、`app`、`worker`、`postgres`、`redis
 
 ## 本地快速开始
 
-本轮只在现有主目录工作，不访问 GitHub。可立即启动公共页面预览：
+本轮只在现有主目录工作，不访问 GitHub。清理后先恢复前端依赖，再启动公共页面预览：
 
 ```powershell
 Set-Location D:\internship\viral-video-agent\frontend
+npm ci
 npm run dev -- --hostname 127.0.0.1 --port 3007
 ```
 
@@ -295,6 +298,8 @@ Worker 镜像内置 `ffmpeg` 和 `yt-dlp`。内容深度分析只处理公开可
 - 自动测试全部使用 Mock，不调用真实收费 API
 
 ## 测试
+
+清理后需先按 [本地运行手册](docs/local-development.md) 恢复 Python 与前端依赖。
 
 ```powershell
 # Python
