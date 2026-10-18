@@ -19,7 +19,7 @@ export default function SharedReportPage() {
       {error ? <ErrorState title="分享链接不可用" description={error} /> : !report ? <LoadingState label="正在加载只读报告" /> : (
         <>
           <div className="grid gap-6 border-b pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><StatusBadge status={report.status} /><span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground"><Eye className="h-3.5 w-3.5" aria-hidden="true" />只读分享</span></div><p className="eyebrow mt-4">Shared report / public</p><h1 className="break-content title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">{report.title}</h1><p className="mt-3 max-w-3xl text-pretty text-sm leading-6 text-muted-foreground">一份关于 B 站公开内容的研究手记。你可以阅读结论、查看样本，并回到原始出处。</p></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><StatusBadge status={report.status} /><span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground"><Eye className="h-3.5 w-3.5" aria-hidden="true" />只读分享</span></div><h1 className="break-content title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">{report.title}</h1><p className="mt-3 max-w-3xl text-pretty text-sm leading-6 text-muted-foreground">一份关于 B 站公开内容的研究手记。你可以阅读结论、查看样本，并回到原始出处。</p></div>
             <div className="inline-flex items-center gap-2 text-xs font-semibold text-success"><ShieldCheck className="h-4 w-4" aria-hidden="true" />公开只读版本</div>
           </div>
 

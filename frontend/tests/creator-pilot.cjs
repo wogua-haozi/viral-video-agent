@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.VVA_PLAYWRIGHT_PACKAGE || 'playwright');
 const baseURL = process.env.VVA_BASE_URL || 'http://127.0.0.1:3007';
-const output = process.env.VVA_OUTPUT_DIR ? path.resolve(process.env.VVA_OUTPUT_DIR) : path.resolve(__dirname, '../../output/creator-pilot');
+const output = process.env.VVA_OUTPUT_DIR ? path.resolve(process.env.VVA_OUTPUT_DIR) : path.resolve(__dirname, '../../output/soft-ui-20261018');
 fs.mkdirSync(output, { recursive: true });
 const timestamp = '2026-10-17T02:00:00Z';
 const baseline = { id: 'fixture-job', query: '相机测评赛道：标题与开场的表达研究（演示）', platforms: ['bilibili'], analysis_mode: 'standard', status: 'running', progress: 35, clarification_round: 0, execution_version: 0, can_retry: false, can_revise: false, can_confirm_candidates: false, is_stopping: false, created_at: timestamp };
@@ -41,6 +41,7 @@ const report = { id: 'fixture-report', job_id: job.id, title: '从器材参数�
 };
 const checks = [];
 const pageErrors = [];
+const contrastResults = {};
 function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
 (async () => {
   const browser = await chromium.launch({ headless: true, ...(process.env.VVA_BROWSER_EXECUTABLE ? { executablePath: process.env.VVA_BROWSER_EXECUTABLE } : {}) });
@@ -87,17 +88,49 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     const settleLayout = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const screenshot = async (name, fullPage = true) => { await page.evaluate(() => document.fonts.ready); if (fullPage) await page.evaluate(() => scrollTo(0, 0)); await settleLayout(); screenshots.push(name); return page.screenshot({ path: path.join(output, name), fullPage, animations: 'disabled' }); };
     const fit = async (name) => { await settleLayout(); const size = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: innerWidth })); if (size.scroll > size.viewport) { console.log('OVERFLOW', await page.evaluate(() => Array.from(document.querySelectorAll('body *')).filter((el) => el.getBoundingClientRect().right > innerWidth + 1).map((el) => ({ tag: el.tagName, className: el.className, width: el.getBoundingClientRect().width, text: el.textContent?.slice(0, 70) })).slice(-30))); await screenshot('overflow-debug.png'); } assert.ok(size.scroll <= size.viewport, `${name} overflow: ${JSON.stringify(size)}`); };
+    const checkContrast = async (theme) => {
+      const results = await page.evaluate(() => {
+        const probe = document.createElement('span'); probe.style.setProperty('transition', 'none', 'important'); document.body.appendChild(probe);
+        const color = (token) => { probe.style.color = `hsl(var(--${token}))`; return getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number); };
+        const luminance = (rgb) => rgb.map((v) => { const c = v / 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; }).reduce((sum, c, i) => sum + c * [.2126, .7152, .0722][i], 0);
+        const pairs = [['foreground', 'background', 4.5], ['muted-foreground', 'card', 4.5], ['muted-foreground', 'muted', 4.5], ['primary', 'card', 4.5], ['primary-foreground', 'primary', 4.5], ['input', 'surface-elevated', 3]];
+        const values = pairs.map(([fg, bg, minimum]) => { const a = luminance(color(fg)); const b = luminance(color(bg)); return { pair: `${fg}/${bg}`, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), minimum }; });
+        probe.remove(); return values;
+      });
+      for (const item of results) assert.ok(item.ratio >= item.minimum, `${theme}: ${item.pair} contrast ${item.ratio}`);
+      contrastResults[theme] = results;
+    };
     await page.goto(baseURL); await page.getByRole('heading', { name: /让真实样本/ }).waitFor();
+    await page.getByRole('button', { name: '切换到深色主题' }).waitFor();
+    assert.equal(await page.locator('html').evaluate((el) => el.classList.contains('light')), true);
+    await checkContrast('light'); await fit('home light'); await screenshot('home-desktop-light.png'); await screenshot('home-hero-light.png', false);
+    await page.setViewportSize({ width: 375, height: 812 }); await fit('home light mobile'); await screenshot('home-mobile-light.png');
+    await page.setViewportSize({ width: 768, height: 1024 }); await fit('home tablet');
+    await page.evaluate(() => document.documentElement.style.fontSize = '200%'); await fit('home enlarged text');
+    await page.evaluate(() => document.documentElement.style.fontSize = '');
+    pass('light default, tablet and enlarged text layouts');
+    await page.getByRole('button', { name: '切换到深色主题' }).click(); await page.reload();
+    await page.getByRole('button', { name: '切换到浅色主题' }).waitFor(); await checkContrast('dark');
+    pass('saved dark preference persists; light and dark text and input contrast pass');
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await fit('home desktop'); await screenshot('home-desktop-dark.png'); await screenshot('home-hero-dark.png', false);
     await page.setViewportSize({ width: 375, height: 812 }); await fit('home mobile'); await screenshot('home-mobile-dark.png');
     await page.getByRole('button', { name: '打开导航菜单' }).click();
     await page.getByRole('navigation', { name: '移动端公共导航' }).getByRole('link', { name: /分析模板/ }).click();
     await page.getByRole('dialog', { name: '移动导航' }).waitFor({ state: 'hidden' }); pass('mobile hash navigation closes drawer');
+    await page.getByRole('button', { name: '打开导航菜单' }).click();
+    await page.getByRole('button', { name: '关闭导航菜单' }).waitFor(); await page.keyboard.press('Escape');
+    await page.getByRole('dialog', { name: '移动导航' }).waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('button', { name: '打开导航菜单' }).evaluate((el) => el === document.activeElement), true);
+    pass('mobile navigation Escape returns focus to its trigger');
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${baseURL}/dashboard`);
     await page.getByRole('heading', { name: '最近的研究' }).waitFor(); await fit('dashboard desktop'); await screenshot('dashboard-desktop-dark.png');
-    await page.getByRole('button', { name: '切换到浅色主题' }).click(); await settleLayout(); assert.equal(await page.evaluate(() => getComputedStyle(document.body).color), 'rgb(44, 35, 27)'); await screenshot('dashboard-desktop-light.png');
+    await page.getByRole('button', { name: '切换到浅色主题' }).click(); await settleLayout(); await screenshot('dashboard-desktop-light.png');
+    await page.setViewportSize({ width: 320, height: 740 }); await fit('dashboard 320px');
+    await page.setViewportSize({ width: 375, height: 812 }); await screenshot('dashboard-mobile-light.png');
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`${baseURL}/jobs/new`); await page.getByLabel('你的研究问题', { exact: false }).fill('分析B站近30天相机评测，比较标题和开场。');
-    assert.equal(await page.locator('section.studio-hero').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(33, 25, 16)');
+    assert.equal(await page.locator('#analysis-query').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)');
     await fit('new job desktop'); await screenshot('new-job-desktop-light.png');
     await page.setViewportSize({ width: 320, height: 740 }); await fit('new job 320px');
     await page.setViewportSize({ width: 375, height: 812 }); await screenshot('new-job-mobile-light.png');
@@ -161,7 +194,13 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     await registerLink.click(); await page.waitForURL((url) => url.pathname === '/register');
     const destination = new URL(new URL(page.url()).searchParams.get('next'), baseURL);
     assert.equal(destination.pathname, '/jobs/new'); assert.equal(destination.searchParams.get('template'), '竞品账号内容拆解'); pass('login-to-registration preserves the selected template destination');
+    await page.getByRole('button', { name: '切换到浅色主题' }).click();
+    await page.setViewportSize({ width: 320, height: 740 }); await fit('registration 320px');
+    await page.setViewportSize({ width: 375, height: 812 }); await screenshot('register-mobile-light.png');
+    await page.setViewportSize({ width: 1440, height: 1000 }); await screenshot('register-desktop-light.png');
+    await page.goto(`${baseURL}/examples`); await page.getByRole('heading', { name: '先看清证据如何进入报告' }).waitFor(); await screenshot('examples-desktop-light.png');
+    pass('registration and public examples render in the new theme');
     assert.deepEqual(pageErrors, []); pass('no unhandled browser page errors');
-    fs.writeFileSync(path.join(output, 'ui-validation.json'), JSON.stringify({ fixtureOnly: true, executedAt: new Date().toISOString(), platform: process.platform, browser: await browser.version(), checks, pageErrors, screenshots }, null, 2));
+    fs.writeFileSync(path.join(output, 'ui-validation.json'), JSON.stringify({ fixtureOnly: true, executedAt: new Date().toISOString(), platform: process.platform, browser: await browser.version(), checks, pageErrors, contrastResults, screenshots }, null, 2));
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

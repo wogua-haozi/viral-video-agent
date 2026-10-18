@@ -32,7 +32,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <div className="mb-7 border-b pb-7"><p className="eyebrow">Account / 04</p><h1 className="title-balance mt-2 font-display text-3xl font-semibold leading-snug sm:text-4xl">账号与用量</h1><p className="mt-2 text-sm text-muted-foreground">查看账号状态、月度分析用量与数据分享边界。</p></div>
+      <div className="mb-7 border-b pb-7"><h1 className="title-balance mt-2 font-display text-3xl font-semibold leading-snug sm:text-4xl">账号与用量</h1><p className="mt-2 text-sm text-muted-foreground">查看账号状态、月度分析用量与数据分享边界。</p></div>
       {error ? <ErrorState description={error} /> : !user || !usage ? <LoadingState label="正在读取账号信息" /> : (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="space-y-6">
@@ -46,9 +46,9 @@ export default function SettingsPage() {
               <div className="border-t p-6"><Button variant="secondary" onClick={signOut} isLoading={signingOut}><LogOut className="h-4 w-4" aria-hidden="true" />退出登录</Button></div>
             </Card>
 
-            <Card className="p-6"><div className="flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div><div><p className="eyebrow">Privacy boundary</p><h2 className="mt-1 text-lg font-bold">数据与隐私</h2><p className="mt-3 text-pretty text-sm leading-7 text-muted-foreground">公开分享仅包含报告正文、结构化结论与 Evidence。用户信息、API Key、成本和内部执行轨迹不会进入分享页。</p></div></div></Card>
+            <Card className="p-6"><div className="flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div><div><h2 className="mt-1 text-lg font-bold">数据与隐私</h2><p className="mt-3 text-pretty text-sm leading-7 text-muted-foreground">公开分享仅包含报告正文、结构化结论与 Evidence。用户信息、API Key、成本和内部执行轨迹不会进入分享页。</p></div></div></Card>
           </div>
-          <aside><UsageCard usage={usage} /><Card className="mt-5 p-5"><p className="eyebrow">Single platform</p><h2 className="mt-2 font-bold">当前产品边界</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">仅处理公开可访问的 B 站样本，不提供其他平台入口。</p></Card></aside>
+          <aside><UsageCard usage={usage} /><Card className="mt-5 p-5"><h2 className="mt-2 font-bold">当前产品边界</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">仅处理公开可访问的 B 站样本，不提供其他平台入口。</p></Card></aside>
         </div>
       )}
     </AppShell>

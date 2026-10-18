@@ -87,7 +87,7 @@ export function CandidateConfirmation({ jobId, snapshot, onSubmitted }: { jobId:
         <div className="border-b bg-muted/45 px-5 py-5 sm:px-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="eyebrow">Candidate confirmation</p>
+              <p className="eyebrow">确认研究对象</p>
               <h2 id="candidate-confirmation-title" className="mt-2 font-display text-2xl font-semibold">哪些账号值得放在一起研究？</h2>
               <p className="mt-3 text-sm leading-7 text-muted-foreground">以下候选来自这次采集的公开样本。请逐项选择，至少纳入一个；不确定的账号不会进入正常竞品结论。</p>
             </div>

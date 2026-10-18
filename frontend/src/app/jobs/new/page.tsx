@@ -88,7 +88,7 @@ function NewJobForm() {
     <AppShell>
       <div className="mx-auto max-w-5xl">
         <div className="grid gap-5 border-b pb-7 xl:grid-cols-[1fr_auto] xl:items-end">
-          <div><p className="eyebrow">A new inquiry</p><h1 className="title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">这次，你想看清什么？</h1><p className="mt-4 max-w-2xl text-pretty text-sm leading-7 text-muted-foreground">写下一个具体的问题。我们会从 B 站公开样本中整理线索，保留每条结论的出处。</p></div>
+          <div><p className="eyebrow">新建研究</p><h1 className="title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">这次，你想看清什么？</h1><p className="mt-4 max-w-2xl text-pretty text-sm leading-7 text-muted-foreground">写下一个具体的问题。我们会从 B 站公开样本中整理线索，保留每条结论的出处。</p></div>
           <div className="inline-flex items-center gap-2 text-xs font-semibold text-success"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />B 站公开样本</div>
         </div>
 
@@ -114,8 +114,8 @@ function NewJobForm() {
           </Card>
 
           <aside className="space-y-4">
-            <Card className="p-5"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-lg border bg-accent/10 text-accent"><Sparkles className="h-4 w-4" aria-hidden="true" /></div><div><p className="eyebrow text-accent">Prompt guide</p><h2 className="mt-1 font-bold">写得更具体</h2></div></div><ol className="mt-5 space-y-4 text-sm text-muted-foreground">{['指定赛道、账号或主题', '说明重点看标题、内容或互动', '写清希望得到的行动建议'].map((item, index) => <li key={item} className="grid grid-cols-[2rem_1fr] gap-2"><span className="font-mono text-xs font-bold text-primary">0{index + 1}</span><span>{item}</span></li>)}</ol></Card>
-            <section className="studio-hero rounded-xl border p-5"><p className="eyebrow">What you will receive</p><h2 className="mt-3 font-display text-xl">一份可回看的研究手记</h2><p className="mt-3 text-sm leading-7 text-[#c9b99f]">研究正文、观察与建议、实际样本数据、来源链接，以及本次研究的局限。</p></section>
+            <Card className="p-5"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center text-muted-foreground"><Sparkles className="h-4 w-4" aria-hidden="true" /></div><div><h2 className="mt-1 font-bold">写得更具体</h2></div></div><ol className="mt-5 space-y-4 text-sm text-muted-foreground">{['指定赛道、账号或主题', '说明重点看标题、内容或互动', '写清希望得到的行动建议'].map((item, index) => <li key={item} className="grid grid-cols-[2rem_1fr] gap-2"><span className="font-mono text-xs font-bold text-primary">0{index + 1}</span><span>{item}</span></li>)}</ol></Card>
+            <section className="rounded-xl px-5 py-3"><h2 className="text-sm font-semibold">报告包含什么</h2><p className="mt-3 text-sm leading-7 text-muted-foreground">研究正文、观察与建议、实际样本数据、来源链接，以及本次研究的局限。</p></section>
           </aside>
         </div>
       </div>

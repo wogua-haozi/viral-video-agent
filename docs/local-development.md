@@ -2,7 +2,7 @@
 
 当前状态、验收和唯一任务清单见 [项目状态](project-status.md)。工作目录始终为 `D:\internship\viral-video-agent`。本轮不访问 GitHub、不部署、不提交真实收费任务。
 
-2026-10-18 已删除本项目 `.venv`、`frontend/node_modules`、`frontend/.next` 和 Python/pytest 缓存，并移除本轮测试下载的 PostgreSQL 镜像。恢复运行需要重新安装依赖或构建/拉取镜像。代码、真实配置、知识资料、验收资源、备份及所有数据卷保留。Docker 不依赖宿主机 `.venv` 或 `node_modules`，仍须先完成下方旧库备份恢复步骤。
+2026-10-18 早前已清理本项目 `.venv`、前端依赖和构建、Python/pytest 缓存，并移除测试 PostgreSQL 镜像。随后为新版界面验证重新安装前端依赖并构建；当前 `frontend/node_modules` 和 `.next` 仍保留，临时服务已停止。后端与完整 Docker 恢复仍需重新安装依赖或构建/拉取镜像。代码、真实配置、知识资料、验收资源、备份及所有数据卷保留。Docker 不依赖宿主机 `.venv` 或 `node_modules`，仍须先完成下方旧库备份恢复步骤。
 
 ## 前端预览与开发
 
@@ -32,11 +32,23 @@ Set-Location D:\internship\viral-video-agent\frontend
 # 本机已有的 Playwright；其他电脑改为自身安装目录
 $env:VVA_PLAYWRIGHT_PACKAGE='D:\srp_project\AI_school\report-web\node_modules\playwright-core'
 $env:VVA_BROWSER_EXECUTABLE='C:\Users\0\AppData\Local\ms-playwright\chromium-1234\chrome-win64\chrome.exe'
+$env:VVA_OUTPUT_DIR='D:\internship\viral-video-agent\output\soft-ui-20261018'
 $env:VVA_BASE_URL='http://127.0.0.1:3007'
 node tests/creator-pilot.cjs
 ```
 
-脚本默认刷新 `output/creator-pilot` 的截图和验证 JSON；可通过 `VVA_OUTPUT_DIR` 指定其他结果目录。演示数据不代表实际视频、账号或产品质量。
+脚本默认刷新 `output/soft-ui-20261018` 的截图和验证 JSON，`output/creator-pilot` 保留为 10/17 历史结果；可通过 `VVA_OUTPUT_DIR` 指定其他结果目录。演示数据不代表实际视频、账号或产品质量。
+
+## 本轮尚待清理的前端产物
+
+自动审批审查拒绝了递归删除命令，未提供更具体原因。两个目录已确认仅含本轮 `npm ci` / build 生成的可重建产物，约 435 MiB；临时服务已停止。在 PowerShell 执行：
+
+```powershell
+Remove-Item -LiteralPath 'D:\internship\viral-video-agent\frontend\node_modules' -Recurse -Force
+Remove-Item -LiteralPath 'D:\internship\viral-video-agent\frontend\.next' -Recurse -Force
+```
+
+源码、锁文件、真实 `.env`、截图与恢复归档均不在删除范围。清理后按上方 `npm ci` 恢复前端，不影响 Docker 卷。
 
 ## 后端夹具测试与依赖
 
@@ -65,7 +77,7 @@ Remove-Item Env:\PILOT_TEST_POSTGRES_URL
 
 每条 PostgreSQL 测试只迁移随机 schema 并清理自身 schema。无真实收费调用。
 
-2026-10-17 验收时的 `.venv` 曾继承全局包，该本地环境已清理，全局 Python/Node 与其他项目未动。清理前包版本清单保存在忽略目录 `backups/cleanup-20261018/python-packages.json`；这是环境记录，不是经验证的独立锁文件。前端用 `package-lock.json` 和 `npm ci` 恢复；Python 仍按现有版本范围安装，Docker 部分标签也会变动，因此不宣称逐字节复现旧环境。新的干净环境与 Docker 全栈构建仍待验证，恢复后需重新执行检查。宿主机深度分析还需要 PATH 中的 `ffmpeg`；Dockerfile 已声明安装。
+2026-10-17 验收时的 `.venv` 曾继承全局包，该本地环境已清理，全局 Python/Node 与其他项目未动。清理前包版本清单保存在忽略目录 `backups/cleanup-20261018/python-packages.json`；这是环境记录，不是经验证的独立锁文件。前端用 `package-lock.json` 和 `npm ci` 恢复；Python 仍按现有版本范围安装，Docker 部分标签也会变动，因此不宣称逐字节复现旧环境。2026-10-18 已实际用 `npm ci` 恢复并完成新版前端 lint/build/夹具回归，前端产物仍待上述手动清理。独立 Python 环境与 Docker 全栈构建仍待验证，恢复后需重新执行检查。宿主机深度分析还需要 PATH 中的 `ffmpeg`；Dockerfile 已声明安装。
 
 ## 完整业务服务：先确认配置和旧库
 

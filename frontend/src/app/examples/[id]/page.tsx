@@ -10,7 +10,7 @@ export default function ExampleReportPage() {
         <div className="min-w-0 space-y-5">
           <div className="border border-info/30 bg-info/10 p-4 text-sm text-foreground"><strong className="mr-2 text-info">结构示例</strong>以下内容不是实时市场数据，Evidence 卡片只展示正式报告的界面结构。</div>
           <Card className="print-card overflow-hidden p-0">
-            <div className="border-b bg-secondary px-6 py-7 text-secondary-foreground sm:px-9"><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">Example report / 01</p><h1 className="title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">B站 AI 编程赛道内容分析示例</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-secondary-foreground/70">用于说明结论层级、Evidence 引用与行动建议如何在同一份报告中协作。</p></div>
+            <div className="border-b bg-secondary px-6 py-7 text-secondary-foreground sm:px-9"><p className="font-mono text-[10px] uppercase tracking-[.16em] text-primary">报告示例</p><h1 className="title-balance mt-3 font-display text-3xl font-semibold leading-snug sm:text-4xl">B站 AI 编程赛道内容分析示例</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">用于说明结论层级、Evidence 引用与行动建议如何在同一份报告中协作。</p></div>
             <article className="report-prose p-6 sm:p-9">
               <h2>执行摘要</h2><p>示例报告把结论分为数据观察、分析推断和行动建议，并为所有数值结论绑定 Evidence 编号。</p>
               <h2>数据观察</h2><blockquote>代表样本的标题普遍明确指出工具、任务和结果。<a href="#example-evidence">[ev_example_01]</a></blockquote>

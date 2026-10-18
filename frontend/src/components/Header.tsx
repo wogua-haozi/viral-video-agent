@@ -10,7 +10,7 @@ import { Button, LinkButton } from '@/components/ui';
 
 const navItems = [
   { href: '/#templates', label: '分析模板' },
-  { href: '/#evidence', label: 'Evidence 机制' },
+  { href: '/#evidence', label: '来源与依据' },
   { href: '/examples', label: '示例报告' },
 ];
 
@@ -30,7 +30,7 @@ export function HeaderActions() {
         <Sun className="h-4 w-4 scale-100 transition-transform dark:scale-0" aria-hidden="true" />
         <Moon className="absolute h-4 w-4 scale-0 transition-transform dark:scale-100" aria-hidden="true" />
       </Button>
-      <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex">登录</Link>
+      <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex">登录</Link>
       <LinkButton href="/jobs/new" size="sm">进入工作台</LinkButton>
     </div>
   );
@@ -75,35 +75,35 @@ export function Header() {
 
   if (isAppPage) return null;
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/92 backdrop-blur-xl print:hidden">
+    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-xl print:hidden">
       <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Logo className="[&>span]:hidden min-[420px]:[&>span]:inline" />
-        <nav className="hidden items-center gap-1 md:flex" aria-label="公共导航">
+        <nav className="hidden items-center gap-1 lg:flex" aria-label="公共导航">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Link key={item.href} href={item.href} className="inline-flex min-h-11 items-center rounded-xl px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {item.label}
             </Link>
           ))}
         </nav>
         <div className="flex items-center gap-1.5">
           <HeaderActions />
-          <Button ref={openButtonRef} variant="ghost" size="sm" className="w-11 px-0 md:hidden" onClick={() => setOpen(true)} aria-label="打开导航菜单" aria-expanded={open}>
+          <Button ref={openButtonRef} variant="ghost" size="sm" className="w-11 px-0 lg:hidden" onClick={() => setOpen(true)} aria-label="打开导航菜单" aria-expanded={open}>
             <Menu className="h-5 w-5" aria-hidden="true" />
           </Button>
         </div>
       </div>
 
       {open && (
-        <div className="fixed inset-0 top-0 z-50 bg-secondary/60 backdrop-blur-sm md:hidden" role="dialog" aria-modal="true" aria-label="移动导航" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
+        <div className="fixed inset-0 top-0 z-50 bg-secondary/60 backdrop-blur-sm lg:hidden" role="dialog" aria-modal="true" aria-label="移动导航" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
           <div ref={drawerRef} className="motion-enter ml-auto flex h-dvh w-[min(22rem,88vw)] flex-col overflow-y-auto border-l bg-surface-elevated p-5 shadow-float">
             <div className="flex items-center justify-between gap-4 border-b pb-4">
               <Logo />
               <Button ref={closeButtonRef} variant="ghost" size="sm" className="w-11 px-0" onClick={() => setOpen(false)} aria-label="关闭导航菜单"><X className="h-5 w-5" aria-hidden="true" /></Button>
             </div>
-            <nav className="mt-6 space-y-2" aria-label="移动端公共导航">
-              {navItems.map((item, index) => (
-                <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="flex min-h-12 items-center justify-between rounded-lg border px-4 text-base font-semibold hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  {item.label}<span className="editorial-number">0{index + 1}</span>
+            <nav className="mt-6 space-y-1" aria-label="移动端公共导航">
+              {navItems.map((item) => (
+                <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="flex min-h-12 items-center rounded-xl px-4 text-base font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  {item.label}
                 </Link>
               ))}
             </nav>

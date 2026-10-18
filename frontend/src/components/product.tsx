@@ -37,7 +37,6 @@ export function EvidenceCard({ evidence }: { evidence: EvidenceItem }) {
   const publishedAt = typeof fields.published_at === 'string' ? fields.published_at : publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate.toISOString() : null;
   return (
     <Card id={evidence.evidence_id} tabIndex={-1} className="print-avoid scroll-mt-24 overflow-hidden p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <div className="h-px bg-primary/60" />
       <div className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
@@ -64,7 +63,7 @@ const claimMeta = {
 export function ReportClaim({ claim }: { claim: Claim }) {
   const meta = claimMeta[claim.claim_type] ?? claimMeta.inference;
   return (
-    <article className={cn('print-avoid rounded-r-xl border border-l-4 bg-card p-4 sm:p-5', meta.style)}>
+    <article className={cn('print-avoid rounded-xl border bg-card p-4 sm:p-5', meta.style)}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[.12em]"><span className="font-mono text-[10px] opacity-70">{meta.index}</span>{meta.label}</span>
         <span className="font-mono text-[11px] tabular-nums text-muted-foreground">模型自评 {Number.isFinite(claim.confidence) ? `${Math.round(claim.confidence * 100)}%` : '未提供'}</span>
@@ -72,7 +71,7 @@ export function ReportClaim({ claim }: { claim: Claim }) {
       <p className="text-pretty text-sm font-medium leading-7 text-foreground">{claim.claim}</p>
       <div className="mt-4 flex flex-wrap gap-2">
         {claim.evidence_ids.length ? claim.evidence_ids.map((id) => (
-          <a key={id} href={`#${id}`} onClick={() => revealEvidence(id)} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border bg-background px-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <a key={id} href={`#${id}`} onClick={() => revealEvidence(id)} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-background px-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <Link2 className="h-3 w-3" aria-hidden="true" />{id}
           </a>
         )) : <span className="inline-flex items-center gap-2 text-xs font-medium text-warning-foreground dark:text-warning"><span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true" />该建议基于推断，不包含直接数值证据</span>}
@@ -113,10 +112,9 @@ export function UsageCard({ usage }: { usage: UsageSummary }) {
   const ratio = Math.min(100, Math.round((usage.jobs_used / Math.max(usage.jobs_limit, 1)) * 100));
   return (
     <Card className="relative overflow-hidden p-5">
-      <div className="halftone absolute -right-6 -top-8 h-28 w-28 opacity-25" />
       <div className="relative flex items-start justify-between gap-4">
-        <div><p className="eyebrow">本月已提交</p><p className="mt-2 text-3xl font-black tabular-nums">{usage.jobs_used}<span className="ml-2 text-sm font-medium text-muted-foreground">/ {usage.jobs_limit} 次</span></p></div>
-        <div className="grid h-11 w-11 place-items-center rounded-xl border border-primary/25 bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div>
+        <div><p className="eyebrow">本月已提交</p><p className="mt-2 text-3xl font-semibold tabular-nums">{usage.jobs_used}<span className="ml-2 text-sm font-medium text-muted-foreground">/ {usage.jobs_limit} 次</span></p></div>
+        <div className="grid h-11 w-11 place-items-center text-muted-foreground"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div>
       </div>
       <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="本月任务用量" aria-valuemin={0} aria-valuemax={usage.jobs_limit} aria-valuenow={usage.jobs_used}><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${ratio}%` }} /></div>
       <p className="relative mt-3 text-xs leading-6 text-muted-foreground">本月已提交的任务次数。提交即占用额度；同一任务恢复或重试不重复计次，删除不返还。</p>
@@ -148,7 +146,7 @@ export function FeedbackForm({ reportId }: { reportId: string }) {
 
   return (
     <Card className="p-5 sm:p-6" data-print-hide="true">
-      <div className="mb-5 flex items-start gap-3 border-b pb-4"><div className="grid h-10 w-10 place-items-center rounded-lg border bg-primary/10 text-primary"><MessageSquare className="h-4 w-4" aria-hidden="true" /></div><div><p className="eyebrow">Feedback loop</p><h2 className="mt-1 font-bold">这份报告有帮助吗？</h2></div></div>
+      <div className="mb-5 flex items-start gap-3 border-b pb-4"><div className="grid h-10 w-10 place-items-center text-muted-foreground"><MessageSquare className="h-4 w-4" aria-hidden="true" /></div><div><h2 className="mt-1 font-bold">这份报告有帮助吗？</h2></div></div>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm font-semibold">是否有用<Select className="mt-2" value={useful ? 'yes' : 'no'} onChange={(event) => setUseful(event.target.value === 'yes')}><option value="yes">有用</option><option value="no">无用</option></Select></label>
         <label className="text-sm font-semibold">评分<Select className="mt-2" value={rating} onChange={(event) => setRating(event.target.value)}>{[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} 分</option>)}</Select></label>
@@ -212,9 +210,9 @@ export function ShareDialog({ reportId }: { reportId: string }) {
 export function JobSummaryCard({ id, title, status, progress, createdAt }: { id: string; title: string; status: string; progress: number; createdAt: string }) {
   return (
     <Link href={`/jobs/${id}`} className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-      <Card className="p-4 transition-[border-color,box-shadow] group-hover:border-primary/40 group-hover:shadow-float sm:p-5">
+      <Card className="p-4 transition-[border-color,box-shadow] group-hover:border-primary/30 group-hover:bg-muted/30 sm:p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0"><p className="break-content font-bold leading-6">{title}</p><p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">{new Date(createdAt).toLocaleString('zh-CN')}</p></div>
+          <div className="min-w-0"><p className="break-content font-medium leading-6">{title}</p><p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">{new Date(createdAt).toLocaleString('zh-CN')}</p></div>
           <StatusBadge status={status} />
         </div>
         <div className="mt-4 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full bg-primary" style={{ width: `${progress}%` }} /></div><span className="font-mono text-[11px] text-muted-foreground">{progress}%</span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></div>

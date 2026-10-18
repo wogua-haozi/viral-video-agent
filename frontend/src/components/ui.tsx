@@ -20,9 +20,9 @@ type ButtonSize = 'sm' | 'md' | 'lg';
 
 export function buttonStyles({ variant = 'primary', size = 'md', className }: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}) {
   return cn(
-    'inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-semibold transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
-    variant === 'primary' && 'border border-primary bg-primary text-primary-foreground shadow-[0_8px_24px_hsl(var(--primary)/.18)] hover:bg-primary/90 hover:shadow-[0_10px_28px_hsl(var(--primary)/.24)]',
-    variant === 'secondary' && 'border border-foreground/20 bg-card text-foreground shadow-sm hover:border-foreground/40 hover:bg-muted/70',
+    'inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-medium transition-[color,background-color,border-color,box-shadow] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+    variant === 'primary' && 'border border-transparent bg-primary text-primary-foreground hover:bg-primary/90',
+    variant === 'secondary' && 'border border-border bg-surface text-foreground hover:bg-muted',
     variant === 'ghost' && 'border border-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
     variant === 'danger' && 'border border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90',
     size === 'sm' && 'min-h-11 px-3 text-sm',
@@ -64,7 +64,7 @@ export function LinkButton({ className, variant = 'primary', size = 'md', ...pro
   return <Link className={buttonStyles({ variant, size, className })} {...props} />;
 }
 
-const fieldStyles = 'w-full rounded-lg border border-input bg-surface-elevated text-foreground shadow-[inset_0_1px_0_hsl(var(--foreground)/.03)] outline-none transition-[border-color,box-shadow,background-color] duration-200 placeholder:text-muted-foreground/75 hover:border-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60';
+const fieldStyles = 'w-full rounded-lg border border-input bg-surface-elevated text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-200 placeholder:text-muted-foreground hover:border-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(({ className, ...props }, ref) => (
   <input ref={ref} className={cn(fieldStyles, 'min-h-12 px-3.5 text-base sm:text-sm', className)} {...props} />
@@ -118,7 +118,7 @@ const statusLabels: Record<string, string> = {
 
 export function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold', statusStyles[status] ?? statusStyles.pending)}>
+    <span className={cn('inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold', statusStyles[status] ?? statusStyles.pending)}>
       <span className={cn('h-1.5 w-1.5 rounded-full', statusDots[status] ?? statusDots.pending)} aria-hidden="true" />
       {statusLabels[status] ?? status}
     </span>
@@ -128,9 +128,8 @@ export function StatusBadge({ status }: { status: string }) {
 export function EmptyState({ title = '暂无内容', description, action }: { title?: string; description?: string; action?: React.ReactNode }) {
   return (
     <div className="flex min-h-56 flex-col items-center justify-center px-6 py-10 text-center">
-      <div className="grid h-12 w-12 place-items-center rounded-xl border bg-muted/60"><Inbox className="h-5 w-5 text-muted-foreground" aria-hidden="true" /></div>
-      <p className="eyebrow mt-5">Empty state</p>
-      <h3 className="mt-2 text-lg font-bold">{title}</h3>
+      <Inbox className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+      <h3 className="mt-5 text-lg font-semibold">{title}</h3>
       {description && <p className="mt-2 max-w-md text-pretty text-sm text-muted-foreground">{description}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
@@ -140,9 +139,8 @@ export function EmptyState({ title = '暂无内容', description, action }: { ti
 export function ErrorState({ title = '加载失败', description = '请稍后重试。', action }: { title?: string; description?: string; action?: React.ReactNode }) {
   return (
     <div className="flex min-h-56 flex-col items-center justify-center px-6 py-10 text-center" role="alert">
-      <div className="grid h-12 w-12 place-items-center rounded-xl border border-destructive/25 bg-destructive/10"><AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" /></div>
-      <p className="eyebrow mt-5 text-destructive">Request error</p>
-      <h3 className="mt-2 text-lg font-bold">{title}</h3>
+      <AlertCircle className="h-6 w-6 text-destructive" aria-hidden="true" />
+      <h3 className="mt-5 text-lg font-semibold">{title}</h3>
       <p className="mt-2 max-w-md text-pretty text-sm text-muted-foreground">{description}</p>
       {action && <div className="mt-5">{action}</div>}
     </div>

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Check, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Card, Input } from '@/components/ui';
 import { login, readableError, register } from '@/lib/api';
@@ -50,32 +50,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   };
 
   return (
-    <main className="editorial-grid min-h-[calc(100dvh-4rem)] border-b">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,.92fr)_minmax(28rem,.68fr)] lg:items-stretch lg:px-8 lg:py-16">
-        <section className="studio-hero relative hidden min-h-[38rem] overflow-hidden rounded-xl border p-10 shadow-float lg:flex lg:flex-col">
-          <div className="halftone absolute -right-12 -top-12 h-56 w-56 opacity-25" />
-          <div className="speed-lines absolute inset-x-0 bottom-0 h-48 opacity-30" />
-          <p className="eyebrow relative">Member access / 01</p>
-          <h1 className="title-balance relative mt-6 max-w-xl font-display text-5xl font-medium leading-[1.35]">每条判断，<br />都有来处。</h1>
-          <p className="relative mt-6 max-w-lg text-base leading-8 text-[#c9b99f]">留下一份研究手记。让选题、样本与内容判断，在你的工作台里不断积累。</p>
-          <div className="relative mt-auto grid gap-3">
-            {['保存你的研究与分析报告', '随时回看样本及原始出处', '生成可分享的只读研究手记'].map((item, index) => (
-              <div key={item} className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 border-t border-white/20 py-3 text-sm">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/10"><Check className="h-4 w-4 text-primary" aria-hidden="true" /></span>
-                <span>{item}</span><span className="font-mono text-[10px] text-secondary-foreground/50">0{index + 1}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+    <main className="min-h-[calc(100dvh-4rem)]">
+      <div className="mx-auto max-w-[29rem] px-4 py-12 sm:px-6 sm:py-20">
+        <Card className="bg-surface-elevated p-6 sm:p-9">
+          <h1 className="title-balance text-center font-display text-3xl font-semibold tracking-tight">{mode === 'login' ? '回到你的工作台' : '创建你的账号'}</h1>
+          <p className="mt-3 text-pretty text-center text-sm leading-6 text-muted-foreground">{mode === 'login' ? '继续查看你的任务、报告和分析用量。' : '当前仅用于小规模 B 站单平台分析测试。'}</p>
 
-        <Card className="self-center bg-surface-elevated p-6 shadow-float sm:p-8 lg:p-10">
-          <div className="flex items-start justify-between gap-4 border-b pb-6">
-            <div><p className="eyebrow">{mode === 'login' ? 'Welcome back' : 'Begin your journal'}</p><h1 className="title-balance mt-3 font-display text-3xl font-semibold">{mode === 'login' ? '回到你的工作台' : '开始你的研究手记'}</h1></div>
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div>
-          </div>
-          <p className="mt-5 text-pretty text-sm leading-6 text-muted-foreground">{mode === 'login' ? '继续查看你的任务、报告和分析用量。' : '当前仅用于小规模 B 站单平台分析测试。'}</p>
-
-          <form className="mt-7 space-y-5" onSubmit={submit} noValidate>
+          <form className="mt-8 space-y-5" onSubmit={submit} noValidate>
             <div>
               <label htmlFor="auth-email" className="text-sm font-semibold">邮箱</label>
               <Input id="auth-email" className="mt-2" type="email" required autoComplete="email" inputMode="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />

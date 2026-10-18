@@ -9,8 +9,8 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        display: ['Baskerville', 'Georgia', 'Noto Serif CJK SC', 'Songti SC', 'STSong', 'SimSun', 'serif'],
-        sans: ['Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'system-ui', 'sans-serif'],
+        display: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
       },
       colors: {
         background: 'hsl(var(--background) / <alpha-value>)',

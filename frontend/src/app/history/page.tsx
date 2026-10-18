@@ -53,12 +53,12 @@ export default function HistoryPage() {
   return (
     <AppShell>
       <div className="mb-7 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-end">
-        <div><p className="eyebrow">Archive / 03</p><h1 className="title-balance mt-2 font-display text-3xl font-semibold leading-snug sm:text-4xl">任务与报告</h1><p className="mt-2 text-sm text-muted-foreground">按关键词、状态和日期查找历史研究。</p></div>
+        <div><h1 className="title-balance mt-2 font-display text-3xl font-semibold leading-snug sm:text-4xl">任务与报告</h1><p className="mt-2 text-sm text-muted-foreground">按关键词、状态和日期查找历史研究。</p></div>
         <LinkButton href="/jobs/new">新建分析<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton>
       </div>
 
       <Card className="mb-6 p-4 sm:p-5">
-        <div className="mb-4 flex items-center gap-2 border-b pb-3"><Filter className="h-4 w-4 text-primary" aria-hidden="true" /><span className="eyebrow">Filters</span></div>
+        <div className="mb-4 flex items-center gap-2 border-b pb-3"><Filter className="h-4 w-4 text-primary" aria-hidden="true" /><span className="eyebrow">筛选</span></div>
         <div className="grid gap-4 md:grid-cols-[1fr_13rem_13rem]">
           <label className="text-sm font-semibold">搜索关键词<div className="relative mt-2"><Search className="pointer-events-none absolute left-3.5 top-4 h-4 w-4 text-muted-foreground" aria-hidden="true" /><Input className="pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="输入赛道、选题或竞品" /></div></label>
           <label className="text-sm font-semibold">任务状态<Select className="mt-2" value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">全部状态</option><option value="completed">已完成</option><option value="partial">部分完成</option><option value="waiting_user">待补充</option><option value="waiting_candidate_confirmation">待确认候选</option><option value="failed">失败</option><option value="cancelled">已取消</option><option value="running">分析中</option><option value="pending">排队中</option></Select></label>

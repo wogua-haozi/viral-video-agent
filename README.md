@@ -4,11 +4,11 @@
 
 > 当前真实视频搜索仅支持 B 站。项目不会宣称支持抖音、快手或小红书实时分析。
 
-当前主线：**整合稳定性、证据可信度和伦勃朗风格前端 → 本地验证 → 小范围创作者试用 → 根据真实反馈迭代**。本轮尚未开始创作者试用或部署。
+当前主线：**整合稳定性、证据可信度和简洁柔和的前端 → 本地验证 → 小范围创作者试用 → 根据真实反馈迭代**。本轮尚未开始创作者试用或部署。
 
 当前阶段：本地整合、整理、夹具/隔离迁移验证与计划同步已完成。完整业务运行及真实任务验证仍待完成；后续任务与验收标准以项目状态页为准。
 
-2026-10-18 已清理本项目的本地依赖和构建缓存。源码、配置、知识资料、验收截图与恢复备份保留；再次运行前按 [本地运行手册](docs/local-development.md) 安装依赖或重建 Docker 镜像。
+2026-10-18 已完成新版前端验证，临时服务已停止；本轮恢复的 `frontend/node_modules` 与 `.next` 尚待手动清理（约 435 MiB，自动审批拒绝删除）。源码、配置、知识资料、验收截图与恢复备份保留；当前可直接运行前端，清理后需重新安装依赖。运行与清理命令见 [本地运行手册](docs/local-development.md)。
 
 - [项目状态、实际验收与唯一任务清单](docs/project-status.md)
 - [Windows 启动、停止、测试与数据库备份回退](docs/local-development.md)
@@ -53,29 +53,29 @@ v2 的重点不是“角色数量”，而是把语义决策留给 Planner、Res
 
 ## 前端体验
 
-前端采用受伦勃朗明暗与暖色调启发的“创作者书房”：深棕黑背景、赭金色侧光、象牙白文字与衬线标题，工作台和报告保留清楚的信息层级。首次访问默认深色，已保存的主题偏好继续生效；浅色主题使用暖纸色。全部视觉由 CSS 和项目 SVG 实现，不依赖在线字体或绘画图片。
+前端采用更简洁柔和的视觉：暖白与石墨灰背景、少量蓝色强调、系统无衬线字体、留白和轻圆角。首次访问默认浅色，已保存的深浅主题偏好继续生效。首页、工作台、表单、候选确认与报告共用颜色和组件，不依赖在线字体或图片素材。
 
-![深色产品首页](output/creator-pilot/home-desktop-dark.png)
+![浅色产品首页](output/soft-ui-20261018/home-desktop-light.png)
 
 <details>
 <summary>移动端首页、用户 Dashboard 与报告详情</summary>
 
-![移动端首页](output/creator-pilot/home-mobile-dark.png)
+![移动端首页](output/soft-ui-20261018/home-mobile-light.png)
 
-![用户 Dashboard](output/creator-pilot/dashboard-desktop-dark.png)
+![用户 Dashboard](output/soft-ui-20261018/dashboard-desktop-dark.png)
 
-![分析进度（演示）](output/creator-pilot/job-progress-desktop-light.png)
+![分析进度（演示）](output/soft-ui-20261018/job-progress-desktop-light.png)
 
-![候选确认（演示）](output/creator-pilot/candidates-desktop-light.png)
+![候选确认（演示）](output/soft-ui-20261018/candidates-desktop-light.png)
 
-![浅色工作台（演示）](output/creator-pilot/dashboard-desktop-light.png)
+![浅色工作台（演示）](output/soft-ui-20261018/dashboard-desktop-light.png)
 
-![报告详情（演示）](output/creator-pilot/report-desktop-dark.png)
+![报告详情（演示）](output/soft-ui-20261018/report-desktop-dark.png)
 
-![浅色移动报告（演示）](output/creator-pilot/report-mobile-light.png)
+![浅色移动报告（演示）](output/soft-ui-20261018/report-mobile-light.png)
 </details>
 
-以上截图由合并后的本机 Windows 前端生产构建实际运行生成；工作台、候选、报告使用虚构演示数据，不代表真实研究结果。运行时间和检查项目见 [本机浏览器结果](output/creator-pilot/ui-validation.json)。设计决策见 [前端设计说明](docs/frontend-design.md)，本轮功能与验证说明见 [创作者试用版改进记录](docs/creator-pilot-20261017.md)。[2026-07-15 前端验收记录](docs/frontend-validation-20260715.md) 保留为旧版基线。
+以上截图于 2026-10-18 由本机 Windows 前端生产构建实际运行生成；工作台、候选、报告使用虚构演示数据，不代表真实研究结果。运行时间和检查项目见 [本机浏览器结果](output/soft-ui-20261018/ui-validation.json)。设计决策见 [前端设计说明](docs/frontend-design.md)，2026-10-17 书房版截图留作历史，功能契约与当时验证说明见 [创作者试用版改进记录](docs/creator-pilot-20261017.md)。[2026-07-15 前端验收记录](docs/frontend-validation-20260715.md) 保留为旧版基线。
 
 ### 本轮创作者试用改进
 

@@ -1,0 +1,119 @@
+{
+  "fixtureOnly": true,
+  "executedAt": "2026-10-18T02:10:18.905Z",
+  "platform": "win32",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "light default, tablet and enlarged text layouts",
+    "saved dark preference persists; light and dark text and input contrast pass",
+    "mobile hash navigation closes drawer",
+    "mobile navigation Escape returns focus to its trigger",
+    "new inquiry form fits a 320px viewport",
+    "lost creation responses reuse one idempotency key, including after reload",
+    "unresolved submission restores the query after reload",
+    "candidate choices and reasons survive failed polling and reload",
+    "missing candidate decision receives keyboard focus",
+    "candidate submission resumes the existing job once",
+    "cancelled job keeps polling while stopping, then stops after settlement",
+    "cancelled copy respects the server retry limit",
+    "citation opens evidence; actual zero, missing values, published and fetched time stay distinct",
+    "Bilibili knowledge references are not classified as video samples",
+    "confidence is labeled as uncalibrated model self-assessment",
+    "expanded report and evidence fit a 320px viewport",
+    "dark theme printing uses light paper tokens and hides duplicate detail panels",
+    "initial evidence deep links expand and scroll after asynchronous report load",
+    "login-to-registration preserves the selected template destination",
+    "registration and public examples render in the new theme",
+    "no unhandled browser page errors"
+  ],
+  "pageErrors": [],
+  "contrastResults": {
+    "light": [
+      {
+        "pair": "foreground/background",
+        "ratio": 15.813825387342044,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/card",
+        "ratio": 6.043985415712589,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/muted",
+        "ratio": 5.263137035323776,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary/card",
+        "ratio": 5.742941420362407,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary-foreground/primary",
+        "ratio": 5.742941420362407,
+        "minimum": 4.5
+      },
+      {
+        "pair": "input/surface-elevated",
+        "ratio": 3.4216649273860815,
+        "minimum": 3
+      }
+    ],
+    "dark": [
+      {
+        "pair": "foreground/background",
+        "ratio": 16.137949951019724,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/card",
+        "ratio": 7.604647093602671,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/muted",
+        "ratio": 6.289223226793839,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary/card",
+        "ratio": 7.38209289616415,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary-foreground/primary",
+        "ratio": 8.141023995660543,
+        "minimum": 4.5
+      },
+      {
+        "pair": "input/surface-elevated",
+        "ratio": 3.54088859601539,
+        "minimum": 3
+      }
+    ]
+  },
+  "screenshots": [
+    "home-desktop-light.png",
+    "home-hero-light.png",
+    "home-mobile-light.png",
+    "home-desktop-dark.png",
+    "home-hero-dark.png",
+    "home-mobile-dark.png",
+    "dashboard-desktop-dark.png",
+    "dashboard-desktop-light.png",
+    "dashboard-mobile-light.png",
+    "new-job-desktop-light.png",
+    "new-job-mobile-light.png",
+    "job-progress-desktop-light.png",
+    "candidates-desktop-light.png",
+    "candidates-mobile-dark.png",
+    "report-desktop-dark.png",
+    "report-desktop-light.png",
+    "evidence-desktop-light.png",
+    "report-mobile-light.png",
+    "register-mobile-light.png",
+    "register-desktop-light.png",
+    "examples-desktop-light.png"
+  ]
+}
