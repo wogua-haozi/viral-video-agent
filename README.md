@@ -128,7 +128,7 @@ Compose 包含 8 个服务：`frontend`、`app`、`worker`、`postgres`、`redis
 
 ## 本地快速开始
 
-本轮只在现有主目录工作，不访问 GitHub。清理后先恢复前端依赖，再启动公共页面预览：
+工作目录为现有主目录。GitHub 仓库为 [wogua-haozi/viral-video-agent](https://github.com/wogua-haozi/viral-video-agent)，每次推送须由用户明确确认批次，并使用标准 Git；真实配置、备份和数据仅留本地。清理后先恢复前端依赖，再启动公共页面预览：
 
 ```powershell
 Set-Location D:\internship\viral-video-agent\frontend

@@ -1,5 +1,7 @@
 # Environment variables (contains API keys)
 .env
+.env.*
+!.env.example
 viral-video-agent-new/
 backups/*
 !backups/.gitkeep
@@ -11,16 +13,33 @@ tmp/
 *.mp3
 *.wav
 
+# Local credentials and business data
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+
+# Downloaded model weights
+*.safetensors
+*.gguf
+
 # Python
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+*.log
 .venv/
 venv/
 
 # Node
 node_modules/
 .next/
+*.tsbuildinfo
 
 # Docker volumes data
 chroma_data/

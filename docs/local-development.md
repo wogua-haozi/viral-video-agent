@@ -1,6 +1,6 @@
 # Windows 本地运行与数据保护
 
-当前状态、验收和唯一任务清单见 [项目状态](project-status.md)。工作目录始终为 `D:\internship\viral-video-agent`。本轮不访问 GitHub、不部署、不提交真实收费任务。
+当前状态、验收和唯一任务清单见 [项目状态](project-status.md)。工作目录始终为 `D:\internship\viral-video-agent`。2026-10-20 用户授权当前批次以标准 Git 推送到新仓库 `wogua-haozi/viral-video-agent`；后续推送仍需明确确认批次。本轮不部署、不提交真实收费任务。
 
 2026-10-18 早前已清理本项目 `.venv`、前端依赖和构建、Python/pytest 缓存，并移除测试 PostgreSQL 镜像。随后为新版界面验证重新安装前端依赖并构建；验证完成后用户再次清理 `frontend/node_modules` 和 `.next`，已复核均不存在，临时服务已停止。恢复运行需要重新安装依赖或构建/拉取镜像。代码、真实配置、知识资料、验收资源、备份及所有数据卷保留。Docker 不依赖宿主机 `.venv` 或 `node_modules`，仍须先完成下方旧库备份恢复步骤。
 
