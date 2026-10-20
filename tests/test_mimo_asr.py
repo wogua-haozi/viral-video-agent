@@ -80,11 +80,32 @@ async def test_mimo_provider_errors_become_transcript_errors_for_fallback():
         await provider.transcribe(audio_bytes=b"audio", audio_format="mp3", audio_hash="abc", video_url="https://www.bilibili.com/video/BV1xx411c7mD")
 
 
-def test_audio_extraction_accepts_only_public_bilibili_https_urls():
-    _validate_public_bilibili_url("https://www.bilibili.com/video/BV1xx411c7mD")
-    _validate_public_bilibili_url("https://b23.tv/example")
-    with pytest.raises(AudioExtractionError): _validate_public_bilibili_url("http://www.bilibili.com/video/BV1xx411c7mD")
-    with pytest.raises(AudioExtractionError): _validate_public_bilibili_url("https://example.com/video.mp3")
+@pytest.mark.parametrize("url", [
+    "https://www.bilibili.com/video/BV1xx411c7mD",
+    "https://bilibili.com/video/BV1xx411c7mD",
+    "https://m.bilibili.com/video/BV1xx411c7mD",
+    "https://WWW.BILIBILI.COM:443/video/BV1xx411c7mD",
+    "https://b23.tv/example",
+])
+def test_audio_extraction_accepts_public_bilibili_https_urls(url):
+    _validate_public_bilibili_url(url)
+
+
+@pytest.mark.parametrize("url", [
+    "http://www.bilibili.com/video/BV1xx411c7mD",
+    "https://example.com/video.mp3",
+    "https://evilbilibili.com/video/BV1xx411c7mD",
+    "https://bilibili.com.attacker.example/video/BV1xx411c7mD",
+    "https://evilb23.tv/example",
+    "https://b23.tv.attacker.example/example",
+    "https://user:password@www.bilibili.com/video/BV1xx411c7mD",
+    "https://www.bilibili.com:8443/video/BV1xx411c7mD",
+    "https://www.bilibili.com:invalid/video/BV1xx411c7mD",
+    "https://127.0.0.1/video/BV1xx411c7mD",
+])
+def test_audio_extraction_rejects_other_hosts_credentials_or_ports(url):
+    with pytest.raises(AudioExtractionError):
+        _validate_public_bilibili_url(url)
 
 
 def test_mimo_asr_requires_an_explicit_backend_authorized_key(monkeypatch):
@@ -134,12 +155,12 @@ async def test_bvid_cache_hit_skips_audio_extraction_and_provider(monkeypatch):
     async def fake_cache_get(key):
         return cached if key == "transcript:bvid:BV1xx411c7mD" else None
 
-    def fail_extract(_url):
+    async def fail_extract(_url):
         raise AssertionError("audio extraction must not run on a BVID cache hit")
 
     monkeypatch.setattr(transcript_module, "get_transcript_providers", lambda: [NeverCalledProvider()])
     monkeypatch.setattr(transcript_module, "_cache_get", fake_cache_get)
-    monkeypatch.setattr(transcript_module, "_extract_audio_sync", fail_extract)
+    monkeypatch.setattr(transcript_module, "_extract_audio", fail_extract)
 
     result = await transcript_module.get_transcript(cached["source_url"])
 
@@ -172,7 +193,7 @@ def test_audio_extraction_limits_compressed_output_not_source_file(monkeypatch, 
     monkeypatch.setattr(transcript_module, "PROJECT_TMP", tmp_path)
     monkeypatch.setitem(sys.modules, "yt_dlp", SimpleNamespace(YoutubeDL=FakeYoutubeDL))
 
-    data, audio_format, duration = transcript_module._extract_audio_sync("https://www.bilibili.com/video/BV1xx411c7mD")
+    data, audio_format, duration = transcript_module._extract_audio_sync("https://www.bilibili.com/video/BV1xx411c7mD", str(tmp_path))
 
     assert data == b"compressed-audio"
     assert audio_format == "mp3"

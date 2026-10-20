@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from arq import Retry, cron
 from arq.connections import RedisSettings
 from sqlalchemy import select, update
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, TimeoutError as DatabaseTimeoutError
 
 from src.agents.analyst import analyst_node
 from src.agents.writer import writer_node
@@ -68,6 +69,7 @@ synthesis_graph = build_synthesis_graph_v2()
 logger = logging.getLogger(__name__)
 WORKER_LEASE_SECONDS = 90
 WORKER_HEARTBEAT_SECONDS = 5
+WORKER_HEARTBEAT_STOP_GRACE_SECONDS = 5
 
 
 class _JobStopped(asyncio.CancelledError):
@@ -128,13 +130,29 @@ async def _settle_usage(db, job: AnalysisJob, *, phase: str, asr_seconds: float 
     return await UsageRepository(db).settle_attempt(job, attempt_id, cost, seconds)
 
 
-async def _cancel_and_wait(*tasks: asyncio.Task) -> None:
+async def _cancel_and_wait(*tasks: asyncio.Task, grace_seconds: float = 0) -> None:
+    cancelled = False
+    if grace_seconds and any(not task.done() for task in tasks):
+        grace = asyncio.create_task(asyncio.wait(tasks, timeout=grace_seconds))
+        while not grace.done():
+            try:
+                await asyncio.shield(grace)
+            except asyncio.CancelledError:
+                cancelled = True
     for task in tasks:
         if not task.done():
             task.cancel()
     # Retrieve exceptions as well as await cleanup; no detached graph or
-    # heartbeat may survive its owning execution.
-    await asyncio.gather(*tasks, return_exceptions=True)
+    # heartbeat may survive its owning execution. A second shutdown signal must
+    # not interrupt a child that is stopping its subprocesses.
+    cleanup = asyncio.gather(*tasks, return_exceptions=True)
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 def _select_transcript_candidates(raw_data: list[dict], limit: int, max_seconds: int = ASR_MAX_VIDEO_SECONDS) -> list[str]:
@@ -712,11 +730,15 @@ async def _persist_result(job_id: uuid.UUID, result: dict) -> uuid.UUID:
         return report.id
 
 
-async def _claim_job(job_id: uuid.UUID, expected_version: int | None):
-    token = str(uuid.uuid4())
+async def _claim_job_once(job_id: uuid.UUID, expected_version: int | None, token: str):
     now = datetime.now(timezone.utc)
     async with async_session_factory() as db:
-        filters = [AnalysisJob.id == job_id, AnalysisJob.status == "pending"]
+        filters = [
+            AnalysisJob.id == job_id,
+            (AnalysisJob.status == "pending") | (
+                (AnalysisJob.status == "running") & (AnalysisJob.worker_token == token)
+            ),
+        ]
         if expected_version is not None:
             filters.append(AnalysisJob.execution_version == int(expected_version))
         claimed = await db.execute(
@@ -742,9 +764,34 @@ async def _claim_job(job_id: uuid.UUID, expected_version: int | None):
         return job, synthesis_run is not None, token
 
 
-async def _heartbeat(execution: _Execution) -> None:
+async def _claim_job(job_id: uuid.UUID, expected_version: int | None):
+    # Reuse the token if COMMIT succeeded but its acknowledgement was lost.
+    # A retry may reclaim only its own running row, never another worker's.
+    token = str(uuid.uuid4())
+    for attempt in range(3):
+        try:
+            return await _claim_job_once(job_id, expected_version, token)
+        except (DBAPIError, DatabaseTimeoutError, ConnectionError, TimeoutError, asyncio.TimeoutError) as exc:
+            # asyncpg connection setup can propagate native socket/timeout
+            # exceptions without wrapping them in SQLAlchemy's DBAPIError.
+            transient = isinstance(
+                exc, (OperationalError, InterfaceError, DatabaseTimeoutError, ConnectionError, TimeoutError, asyncio.TimeoutError)
+            ) or exc.connection_invalidated
+            if not transient or attempt == 2:
+                raise
+            logger.warning("Job %s claim interrupted (%s); retrying.", job_id, type(exc).__name__)
+            await asyncio.sleep(0.5 * 2 ** attempt)
+
+
+async def _heartbeat(execution: _Execution, stop: asyncio.Event | None = None) -> None:
+    stop = stop or asyncio.Event()
     while True:
-        await asyncio.sleep(WORKER_HEARTBEAT_SECONDS)
+        try:
+            await asyncio.wait_for(stop.wait(), WORKER_HEARTBEAT_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+        else:
+            return
         async with async_session_factory() as db:
             # CAS also supplies SQLite's write lock; a stale worker must never
             # extend the lease belonging to its replacement.
@@ -773,16 +820,26 @@ async def _heartbeat(execution: _Execution) -> None:
 
 
 async def _supervise(coroutine, execution: _Execution):
+    stop_heartbeat = asyncio.Event()
     work = asyncio.create_task(coroutine)
-    heartbeat = asyncio.create_task(_heartbeat(execution))
+    heartbeat = asyncio.create_task(_heartbeat(execution, stop_heartbeat))
     try:
         done, _ = await asyncio.wait({work, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
         if work in done:
             return await work
         await heartbeat
-        return await work
+        # Keep cancellation ownership here, so the finally block sends a
+        # single cancel and then waits for graph/transcript cleanup.
+        return await asyncio.shield(work)
     finally:
-        await _cancel_and_wait(work, heartbeat)
+        # Do not normally cancel a DB driver between fetching and closing its
+        # cursor. Let the in-flight checkpoint release its transaction before
+        # final settlement, with a bounded grace period inside Arq's margin.
+        stop_heartbeat.set()
+        try:
+            await _cancel_and_wait(work)
+        finally:
+            await _cancel_and_wait(heartbeat, grace_seconds=WORKER_HEARTBEAT_STOP_GRACE_SECONDS)
 
 
 async def _finish_attempt(execution: _Execution, *, interrupted: bool = False, failure: tuple[str, bool] | None = None) -> tuple[bool, int | None]:
@@ -913,10 +970,15 @@ async def run_analysis_job(ctx: dict, job_id_value: str, execution_version_value
         # Includes Brief, provider-slot waiting, collection, ASR, synthesis and
         # persistence. Arq's extra 30 seconds are reserved for cancellation and
         # settlement, rather than allowing ASR to escape the job budget.
-        await asyncio.wait_for(
-            _supervise(_execute_job(ctx, job, synthesis_run, execution), execution),
-            timeout=JOB_TIMEOUT_SECONDS,
+        supervision = asyncio.create_task(
+            _supervise(_execute_job(ctx, job, synthesis_run, execution), execution)
         )
+        try:
+            await asyncio.wait_for(asyncio.shield(supervision), timeout=JOB_TIMEOUT_SECONDS)
+        finally:
+            # wait_for alone can abandon its cancellation wait when it receives
+            # another shutdown signal. Own that wait before settling any usage.
+            await _cancel_and_wait(supervision)
     except _JobStopped:
         await _finish_attempt(execution)
     except asyncio.CancelledError:

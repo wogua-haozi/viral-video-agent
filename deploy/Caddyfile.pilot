@@ -1,0 +1,10 @@
+{$PILOT_DOMAIN} {
+    # Protect every page, static asset, API and share URL with the same gate.
+    basic_auth {
+        {$PILOT_GATE_USER} {$PILOT_GATE_HASH}
+    }
+    reverse_proxy nginx:80 {
+        # The application uses its HttpOnly session cookie, not this gate secret.
+        header_up -Authorization
+    }
+}

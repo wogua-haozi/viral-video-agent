@@ -20,8 +20,15 @@ let failEventsOnce = false;
 let settleStopping = false;
 let jobReads = 0;
 let decisionsSubmitted = 0;
+let activeUserId = 'fixture-user';
+let revisionOutcome = 'ok';
+let retryOutcome = 'ok';
+let retryRequests = 0;
+let retryStateReads = null;
 const creates = [];
 const serverJobs = new Map();
+const revisions = [];
+const revisionJobs = new Map();
 const snapshot = {
   snapshot_id: 'fixture-snapshot', snapshot_version: 'candidate-snapshot.v1', snapshot_hash: 'a'.repeat(64), max_candidates: 8, can_submit: true,
   topic_spec: { topic: '相机测评', target_content: ['相机评测', '摄影器材使用'], competitor_definition: '持续发布相机测评的账号', time_window_days: 90, assumptions: [] },
@@ -59,6 +66,24 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
         if (failuresRemaining-- > 0) return route.abort('failed');
         job = serverJobs.get(body.idempotency_key); return json(job, 202);
       }
+      if (/^\/jobs\/fixture-(job|other)\/revisions$/.test(endpoint)) {
+        const body = request.postDataJSON();
+        const sourceId = endpoint.split('/')[2];
+        const key = JSON.stringify([activeUserId, sourceId, body.idempotency_key]);
+        revisions.push({ ...body, userId: activeUserId, sourceId });
+        if (!revisionJobs.has(key)) revisionJobs.set(key, { ...baseline, id: `fixture-revision-${revisionJobs.size + 1}`, query: body.query, revision_of_job_id: sourceId, status: 'pending', progress: 0 });
+        if (revisionOutcome === 'lost') return route.abort('failed');
+        if (revisionOutcome === '503') return json({ error_code: 'WORKER_FAILED', message: '演示：修订响应暂不可用。' }, 503);
+        return json(revisionJobs.get(key), 202);
+      }
+      if (endpoint === '/jobs/fixture-job/retry') {
+        retryRequests++;
+        job = { ...job, status: 'pending', progress: 0, execution_version: job.execution_version + 1, can_retry: false, can_revise: false };
+        retryStateReads = 0;
+        if (retryOutcome === 'lost') return route.abort('failed');
+        if (retryOutcome === '503') { failJobOnce = true; return json({ error_code: 'WORKER_FAILED', message: '演示：重试响应暂不可用。' }, 503); }
+        return json(job, 202);
+      }
       if (endpoint === '/jobs') {
         const status = url.searchParams.get('status');
         const waiting = { ...baseline, status: 'waiting_candidate_confirmation', progress: 55, can_confirm_candidates: true, can_revise: true };
@@ -68,8 +93,15 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
         jobReads++;
         if (failJobOnce) { failJobOnce = false; return route.abort('failed'); }
         if (job.is_stopping && settleStopping) job = { ...job, is_stopping: false, can_retry: true, can_revise: true };
+        if (retryStateReads !== null) {
+          retryStateReads++;
+          if (retryStateReads === 2) job = { ...job, status: 'running', progress: 50 };
+          if (retryStateReads >= 3) { job = { ...job, status: 'completed', progress: 100 }; retryStateReads = null; }
+        }
         return json(job);
       }
+      if (endpoint === '/jobs/fixture-other') return json({ ...job, id: 'fixture-other' });
+      if (/^\/jobs\/fixture-revision-\d+$/.test(endpoint)) return json([...revisionJobs.values()].find((item) => `/jobs/${item.id}` === endpoint));
       if (endpoint.endsWith('/events')) {
         if (failEventsOnce) { failEventsOnce = false; return route.abort('failed'); }
         return json({ items: [{ event_type: job.status === 'waiting_candidate_confirmation' ? 'waiting_candidate_confirmation' : 'collecting', message: job.status === 'waiting_candidate_confirmation' ? '样本已整理完成，等待你确认账号范围。' : '正在整理本次研究的公开样本。', progress: job.progress, level: 'info', created_at: timestamp }] });
@@ -80,7 +112,7 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
       if (endpoint.endsWith('/feedback')) return route.fulfill({ status: 204 });
       if (endpoint.endsWith('/shares')) return json({ token: 'fixture-token', id: 'fixture-share', expires_at: '2026-10-24T02:00:00Z' }, 201);
       if (endpoint.endsWith('/cancel')) { job = { ...job, status: 'cancelled', is_stopping: true, can_retry: false }; return json(job); }
-      if (endpoint === '/auth/me') return json({ id: 'fixture-user', email: 'demo@example.invalid', created_at: timestamp, is_active: true });
+      if (endpoint === '/auth/me') return json({ id: activeUserId, email: 'demo@example.invalid', created_at: timestamp, is_active: true });
       throw new Error(`Unexpected API request: ${request.method()} ${endpoint}`);
     });
     const page = await context.newPage(); page.on('pageerror', (error) => pageErrors.push(error.message));
@@ -167,6 +199,60 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     job = { ...job, can_retry: false, can_revise: true }; await page.reload();
     await page.getByText('任务已取消，已产生的用量会保留。可修改研究范围创建新任务。', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: '重试任务', exact: true }).count(), 0); pass('cancelled copy respects the server retry limit');
+    const revisionA = '只看相机评测的标题结构（演示修订 A）';
+    const revisionB = '只看相机评测的开场结构（演示修订 B）';
+    const revisionInput = page.getByLabel('新的研究范围', { exact: true });
+    const submitRevision = page.getByRole('button', { name: '创建修订任务', exact: true });
+    const waitRevision = async (query) => page.waitForFunction((expected) => {
+      const input = document.querySelector('#revision-query');
+      return input && !input.disabled && input.value === expected;
+    }, query);
+    await page.goto(`${baseURL}/jobs/fixture-job?revise=1`);
+    await waitRevision(job.query);
+    revisionOutcome = '503';
+    await revisionInput.fill(revisionA); await submitRevision.click();
+    await page.getByRole('alert').getByText('演示：修订响应暂不可用。', { exact: true }).waitFor();
+    await page.reload(); await waitRevision(revisionA);
+    revisionOutcome = 'lost';
+    await submitRevision.click(); await page.getByRole('alert').getByText('网络异常，请检查连接后重试。', { exact: true }).waitFor();
+    assert.equal(revisions.length, 2); assert.equal(revisions[0].idempotency_key, revisions[1].idempotency_key); assert.equal(revisionJobs.size, 1);
+    pass('revision 503 and lost responses reuse the persisted payload and key after reload');
+    await revisionInput.fill(revisionB); await submitRevision.click();
+    await page.getByRole('alert').getByText('网络异常，请检查连接后重试。', { exact: true }).waitFor();
+    assert.notEqual(revisions[2].idempotency_key, revisions[0].idempotency_key);
+    await page.reload(); await waitRevision(revisionB);
+    activeUserId = 'fixture-other-user';
+    await page.reload(); await waitRevision(job.query);
+    await revisionInput.fill(revisionB); await submitRevision.click();
+    await page.getByRole('alert').getByText('网络异常，请检查连接后重试。', { exact: true }).waitFor();
+    assert.notEqual(revisions[3].idempotency_key, revisions[2].idempotency_key);
+    await page.goto(`${baseURL}/jobs/fixture-other?revise=1`); await waitRevision(job.query);
+    activeUserId = 'fixture-user';
+    await page.goto(`${baseURL}/jobs/fixture-job?revise=1`); await waitRevision(revisionB);
+    pass('unresolved revision drafts are isolated by account and source job');
+    revisionOutcome = 'ok';
+    await revisionInput.fill(revisionA); await submitRevision.click(); await page.waitForURL('**/jobs/fixture-revision-1');
+    assert.equal(revisions[4].idempotency_key, revisions[0].idempotency_key); assert.equal(revisionJobs.size, 3);
+    await page.goto(`${baseURL}/jobs/fixture-job?revise=1`); await waitRevision(revisionB);
+    await submitRevision.click(); await page.waitForURL('**/jobs/fixture-revision-2');
+    assert.equal(revisions[5].idempotency_key, revisions[2].idempotency_key);
+    await page.goto(`${baseURL}/jobs/fixture-job?revise=1`); await waitRevision(job.query);
+    activeUserId = 'fixture-other-user'; await page.reload(); await waitRevision(revisionB);
+    activeUserId = 'fixture-user';
+    pass('editing a revision and restoring an earlier payload reuses its key; success clears only that attempt');
+    for (const outcome of ['503', 'lost']) {
+      job = { ...baseline, status: 'failed', progress: 0, can_retry: true, can_revise: true };
+      retryOutcome = outcome;
+      await page.goto(`${baseURL}/jobs/fixture-job`); await page.getByRole('button', { name: '重试任务', exact: true }).waitFor();
+      const requestsBefore = retryRequests;
+      await page.getByRole('button', { name: '重试任务', exact: true }).click();
+      await page.getByText('研究记录已保存。', { exact: true }).waitFor({ timeout: 20000 });
+      assert.equal(retryRequests, requestsBefore + 1); assert.equal(job.execution_version, 1); assert.equal(job.status, 'completed');
+      // Next.js also renders an empty route-announcement alert outside main.
+      assert.equal(await page.getByRole('main').getByRole('alert').count(), 0);
+      const completedAt = jobReads; await page.waitForTimeout(4000); assert.equal(jobReads, completedAt);
+      pass(`uncertain retry (${outcome}) reconciles server state and polls pending/running to terminal once`);
+    }
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${baseURL}/reports/fixture-report`); await page.getByRole('heading', { name: report.title }).first().waitFor();
     assert.equal(await page.locator('#report-claims').getAttribute('open'), null); assert.equal(await page.locator('#report-evidence').getAttribute('open'), null);
     await screenshot('report-desktop-dark.png'); await page.getByRole('button', { name: '切换到浅色主题' }).click(); await screenshot('report-desktop-light.png');
@@ -182,7 +268,14 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     await page.setViewportSize({ width: 320, height: 740 }); await fit('report 320px'); pass('expanded report and evidence fit a 320px viewport');
     await page.locator('#report-claims > summary').click(); await page.locator('#report-evidence > summary').click();
     await page.setViewportSize({ width: 375, height: 812 }); await screenshot('report-mobile-light.png');
-    await page.getByRole('button', { name: '切换到深色主题' }).click(); await settleLayout(); await page.emulateMedia({ media: 'print' }); await settleLayout(); assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(255, 255, 255)');
+    await page.getByRole('button', { name: '切换到深色主题' }).click();
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+    await page.emulateMedia({ media: 'print' });
+    await page.waitForFunction(() => {
+      const paper = getComputedStyle(document.documentElement);
+      return matchMedia('print').matches && paper.backgroundColor === 'rgb(255, 255, 255)' && paper.colorScheme === 'light' && getComputedStyle(document.body).backgroundColor === 'rgb(255, 255, 255)';
+    });
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(255, 255, 255)');
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), 'rgb(255, 255, 255)');
     assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light');
     assert.equal(await page.locator('#report-evidence').evaluate((el) => getComputedStyle(el).display), 'none');

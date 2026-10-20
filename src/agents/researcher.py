@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 from langchain_core.messages import HumanMessage
 from src.agents.supervisor import get_llm, extract_text
 from src.graph.state import AgentState
@@ -11,6 +13,73 @@ from src.utils.asr_usage_tracker import asr_usage_tracker
 
 
 ALLOWED_TOOLS = {"search_videos", "rag_search", "get_transcript", "get_trend_data"}
+logger = logging.getLogger(__name__)
+_MCP_CANCEL_WAIT_SECONDS = 3
+
+
+class _ToolRequestStream:
+    """Observe the public JSON-RPC envelope without SDK private request state."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.request_id = None
+
+    async def send(self, message):
+        request = message.message.root
+        if getattr(request, "method", None) == "tools/call":
+            self.request_id = request.id
+        await self.stream.send(message)
+
+    async def aclose(self):
+        await self.stream.aclose()
+
+    async def __aenter__(self):
+        await self.stream.__aenter__()
+        return self
+
+    async def __aexit__(self, *args):
+        return await self.stream.__aexit__(*args)
+
+
+async def _cancel_remote_tool(session, request_id, request, tool_name, cleanup_completed):
+    """Deliver protocol cancellation before closing SSE; never wait forever."""
+    from mcp import types
+
+    async def cancel_and_drain():
+        if request_id is not None and not request.done():
+            await session.send_notification(types.ClientNotification(types.CancelledNotification(
+                params=types.CancelledNotificationParams(requestId=request_id, reason="Task cancelled"),
+            )))
+        try:
+            result = await request
+            if tool_name == "get_transcript":
+                asr_usage_tracker.record(_unwrap_mcp_result(result))
+        except Exception:
+            # A cancellation response is an MCP error. A failed transport is
+            # also not permission to start the work again through fallback.
+            if tool_name == "get_transcript":
+                await cleanup_completed.wait()
+        finally:
+            if not request.done():
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
+
+    cleanup = asyncio.create_task(asyncio.wait_for(cancel_and_drain(), timeout=_MCP_CANCEL_WAIT_SECONDS))
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            continue
+        except Exception:
+            break
+    try:
+        await cleanup
+    except Exception as exc:
+        logger.warning("MCP cancellation cleanup not confirmed (%s)", type(exc).__name__)
+    finally:
+        if not request.done():
+            request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
 
 
 class MCPToolExecutionError(RuntimeError):
@@ -74,9 +143,26 @@ async def call_tool_via_mcp(tool_name: str, params: dict):
         from mcp.client.sse import sse_client
 
         async with sse_client(MCP_SERVER_URL) as (read, write):
-            async with ClientSession(read, write) as session:
+            tracked_write = _ToolRequestStream(write)
+            cleanup_completed = asyncio.Event()
+
+            async def on_log(params):
+                data = params.data
+                if (
+                    params.logger == "viral-video.transcript" and isinstance(data, dict)
+                    and data.get("requestId") == tracked_write.request_id
+                    and data.get("cleanup_complete") is True
+                ):
+                    cleanup_completed.set()
+
+            async with ClientSession(read, tracked_write, logging_callback=on_log) as session:
                 await session.initialize()
-                result = await session.call_tool(tool_name, params)
+                request = asyncio.create_task(session.call_tool(tool_name, params))
+                try:
+                    result = await asyncio.shield(request)
+                except asyncio.CancelledError:
+                    await _cancel_remote_tool(session, tracked_write.request_id, request, tool_name, cleanup_completed)
+                    raise
                 value = _unwrap_mcp_result(result)
                 if tool_name == "get_transcript":
                     # Record before transport cleanup can await/cancel. This
@@ -85,7 +171,7 @@ async def call_tool_via_mcp(tool_name: str, params: dict):
     except MCPToolExecutionError:
         raise
     except Exception as e:
-        print(f"[Researcher] MCP调用失败，回退到直接调用: {e}")
+        print(f"[Researcher] MCP调用失败，回退到直接调用: {type(e).__name__}")
         return await call_tool(tool_name, params)
     return value
 

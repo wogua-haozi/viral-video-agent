@@ -4,11 +4,11 @@
 
 > 当前真实视频搜索仅支持 B 站。项目不会宣称支持抖音、快手或小红书实时分析。
 
-当前主线：**整合稳定性、证据可信度和简洁柔和的前端 → 本地验证 → 小范围创作者试用 → 根据真实反馈迭代**。本轮尚未开始创作者试用或部署。
+当前主线：**稳定性与试用入口完善 → 工程验证并推送 → 网页 ChatGPT 只读复审 → 用户本地真实任务与报告质量验收 → 小范围创作者试用 → 反馈迭代**。本轮不自动部署或调用收费服务。
 
-当前阶段：本地整合、整理、夹具/隔离迁移验证与计划同步已完成。完整业务运行及真实任务验证仍待完成；后续任务与验收标准以项目状态页为准。
+当前阶段：本轮补齐领取恢复、修订重发、重试轮询、可中止转写与受控 HTTPS 配置。工程检查与真实业务验收分开记录；后续任务和唯一验收清单见项目状态页。完整业务运行及真实报告质量仍等待用户验收。
 
-2026-10-18 已完成新版前端验证，临时服务已停止；本轮恢复的 `frontend/node_modules` 与 `.next` 已由用户清理，并复核两个目录均不存在（清理前约 435 MiB）。源码、配置、知识资料、验收截图与恢复备份保留；再次运行前端需重新安装依赖，见 [本地运行手册](docs/local-development.md)。
+2026-10-20 为本轮回归重新创建了独立 `.venv`，按原依赖声明安装，并以 `npm ci` 恢复前端依赖。保留简洁柔和的界面及 10/18 展示图；本轮未改变视觉设计。运行、停止与数据保护见 [本地运行手册](docs/local-development.md)。
 
 - [项目状态、实际验收与唯一任务清单](docs/project-status.md)
 - [Windows 启动、停止、测试与数据库备份回退](docs/local-development.md)
@@ -81,8 +81,10 @@ v2 的重点不是“角色数量”，而是把语义决策留给 Planner、Res
 
 - 提交时预留月度任务额度；相同请求重发不会新建任务，失败、取消、重试和删除后保留已产生的用量。
 - Worker 使用执行版本、独立执行标识和心跳租约；超时覆盖完整执行阶段，丢失 Worker 的任务可由调度器有限恢复。
+- 领取阶段短暂数据库故障有限重试；已派发但长期未领取时核对实际 Arq 状态，队列中仍有效的任务不重复派发，丢失或已结束的投递按 CAS 升执行版本恢复，共用重试上限且不新增额度。
 - 实时样本请求需要有效视频来源；缺失指标展示为“未知”，报告附录保留实际字段、发布时间、采集时间和样本边界。
-- 新建分析保留同一请求的提交标识，轮询中断保留当前页面与候选选择；报告支持从引用跳转到对应证据。
+- 新建分析保留同一请求的提交标识；范围修订在当前标签页按账号、源任务与内容保存未决请求，503/响应丢失后刷新仍复用幂等键。重试响应不确定时重新核对服务端并跟踪至终态。报告支持引用跳转。
+- 下载/转码由可终止的子进程树执行，取消和总超时等待清理；MCP 使用内部 Redis 转写缓存，缓存故障只记录操作及异常类型。
 - 升级需要数据库迁移 `20261017_0005`。部署顺序、额度语义与验证边界见 [本轮记录](docs/creator-pilot-20261017.md)。
 
 ## 产品能力
@@ -117,7 +119,7 @@ Worker
 
 工具调用由图内 Research Loop 发起，经 MCP Server 访问 Bilibili、ChromaDB 与可选 ASR。PostgreSQL 保存长期业务事实；Redis 只承担队列、临时状态、事件、锁和缓存。
 
-Compose 包含 8 个服务：`frontend`、`app`、`worker`、`postgres`、`redis`、`chromadb`、`mcp-server`、`nginx`。PostgreSQL、Redis 和 ChromaDB 均使用 Docker 命名卷，不把数据库内部文件写入仓库。
+基础 Compose 包含 8 个服务：`frontend`、`app`、`worker`、`postgres`、`redis`、`chromadb`、`mcp-server`、`nginx`。调试端口仅绑定回环地址。试用覆盖配置移除全部直接发布端口，只增加受控 HTTPS 的 `pilot-entry`，并关闭自助注册、人工开通账号；整个页面和 API 入口均受保护。PostgreSQL、Redis 和 ChromaDB 使用命名卷。配置见 [Windows 手册](docs/local-development.md#受控-https-试用入口仅配置本轮不部署)。
 
 详细说明：
 
@@ -128,7 +130,7 @@ Compose 包含 8 个服务：`frontend`、`app`、`worker`、`postgres`、`redis
 
 ## 本地快速开始
 
-工作目录为现有主目录。GitHub 仓库为 [wogua-haozi/viral-video-agent](https://github.com/wogua-haozi/viral-video-agent)，每次推送须由用户明确确认批次，并使用标准 Git；真实配置、备份和数据仅留本地。清理后先恢复前端依赖，再启动公共页面预览：
+工作目录为现有主目录。GitHub 仓库为 [wogua-haozi/viral-video-agent](https://github.com/wogua-haozi/viral-video-agent)，每次推送须由用户明确确认批次，并使用标准 Git；真实配置、备份和数据仅留本地。公共页面预览：
 
 ```powershell
 Set-Location D:\internship\viral-video-agent\frontend
@@ -150,6 +152,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3007
 APP_ENV=production
 POSTGRES_PASSWORD=replace-with-a-strong-password
 JWT_SECRET=replace-with-at-least-32-random-bytes
+REGISTRATION_ENABLED=false
 ```
 
 产品 Worker 默认使用允许应用后端调用的 DeepSeek API：
@@ -228,7 +231,7 @@ ASR_MAX_VIDEOS=5
 
 `ENABLE_INTERACTIVE_BRIEF=false`（App 与 Worker 一致）时，现有 Job 行为保持不变。开启后，模糊需求会先生成最多两轮澄清，任务进入 `waiting_user`；Job 页分开展示当前问题和已回答历史。
 
-修改研究范围会创建新 Job，并用 `revision_of_job_id` 保留审计关系，不覆盖旧回答、TopicSpec 或报告。Worker 每分钟有限批量 reconciliation 超时的 `pending + arq_job_id=null` 派发意图，复用原 `execution_version` 和确定性 Arq ID，不增加 `retry_count`。
+修改研究范围会创建新 Job，并用 `revision_of_job_id` 保留审计关系，不覆盖旧回答、TopicSpec 或报告。Worker 每分钟有限批量对账：未确认派发的意图复用原执行版本和确定性 Arq ID，不增加重试数；已派发但长期未领取的任务检查实际队列状态，仅对丢失/结束的投递以 CAS 升版本恢复，计入共享重试上限，不额外占额度。
 
 vNext-C0 补齐 B 站搜索结果的稳定账号身份数据契约：合法 `owner.mid` 被规范化为 `platform_account_id`，并生成 `https://space.bilibili.com/{mid}` 形式的规范主页；`display_name` 仅用于展示，不能作为身份或合并依据。缺少合法 MID 时身份和主页保持 `null`，不会按账号名猜测。身份字段同时进入搜索 raw data 和 Evidence 的有限 `data_fields` 投影；现有 `author` 字段保留兼容。
 
@@ -295,11 +298,13 @@ Worker 镜像内置 `ffmpeg` 和 `yt-dlp`。内容深度分析只处理公开可
 - 最长 600 秒，Base64 后最大 10MB
 - 音频只在 `tmp/` 临时存在，任务后自动删除且禁止提交
 - 按 BVID 与 `audio_hash` 缓存转写
-- 自动测试全部使用 Mock，不调用真实收费 API
+- 校验 HTTPS 的精确主域/带点子域与 `b23.tv`，拒绝近似域名、凭证及非默认端口
+- 取消/超时会终止下载与 FFmpeg 进程树，等待临时资源清理
+- 模型、ASR、外部视频使用夹具；队列、缓存与数据库另用专用临时服务验证，不调用真实收费 API
 
 ## 测试
 
-清理后需先按 [本地运行手册](docs/local-development.md) 恢复 Python 与前端依赖。
+依赖缺失时先按 [本地运行手册](docs/local-development.md) 恢复 Python 与前端依赖；本机本轮已恢复。
 
 ```powershell
 # Python
@@ -315,7 +320,7 @@ cd ..
 docker compose config --quiet
 ```
 
-本机本轮验收统一见 [项目状态](docs/project-status.md)。2026-07 的 vNext-C 工程通过与冻结结论见 [历史验收](docs/interactive-intelligence-vnext-c-validation-20260725.md)，不能代替本次测试或报告质量验收。
+本机本轮验收统一见 [项目状态](docs/project-status.md)，2026-10-20 的可共享记录见 [工程摘要](output/pilot-hardening-20261020/engineering-validation.json)。296 项后端、26 项浏览器及相关工程检查通过，仍等待网页只读复审和用户完整业务/真实报告验收。2026-07 的 vNext-C 工程通过与冻结结论见 [历史验收](docs/interactive-intelligence-vnext-c-validation-20260725.md)，不替代报告质量验收。
 
 ### 历史真实 API 冒烟（2026-07-13）
 

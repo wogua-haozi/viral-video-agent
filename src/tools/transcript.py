@@ -2,7 +2,12 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
+import os
 import re
+import signal
+import subprocess
+import sys
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -28,8 +33,10 @@ from src.config import (
 )
 from src.utils.asr_usage_tracker import asr_usage_tracker
 
-PROJECT_TMP = Path(__file__).resolve().parents[2] / "tmp"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_TMP = PROJECT_ROOT / "tmp"
 BVID_RE = re.compile(r"BV[0-9A-Za-z]{10}")
+logger = logging.getLogger(__name__)
 
 
 class TranscriptError(RuntimeError):
@@ -123,32 +130,128 @@ def transcript_capability() -> tuple[bool, str]:
 
 
 def _validate_public_bilibili_url(video_url: str) -> None:
-    parsed = urlparse(video_url)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or not (host == "b23.tv" or host.endswith("bilibili.com")):
+    try:
+        parsed = urlparse(video_url)
+        host = (parsed.hostname or "").lower()
+        allowed_host = host in {"b23.tv", "bilibili.com"} or host.endswith(".bilibili.com")
+        allowed = (
+            parsed.scheme == "https" and allowed_host and parsed.port in {None, 443}
+            and parsed.username is None and parsed.password is None
+        )
+    except ValueError:
+        allowed = False
+    if not allowed:
         raise AudioExtractionError("only public bilibili https URLs are allowed")
 
 
-def _extract_audio_sync(video_url: str) -> tuple[bytes, str, float]:
+def _extract_audio_sync(video_url: str, temp_dir: str) -> tuple[bytes, str, float]:
+    """Run only inside the disposable extraction process, including FFmpeg."""
+    _validate_public_bilibili_url(video_url)
+    try:
+        import yt_dlp
+        output = str(Path(temp_dir) / "audio.%(ext)s")
+        options = {
+            "format": "bestaudio/best", "outtmpl": output, "noplaylist": True,
+            "quiet": True, "no_warnings": True, "cachedir": False,
+            "match_filter": lambda info, *, incomplete=False: "video too long" if info.get("duration") and info["duration"] > ASR_MAX_VIDEO_SECONDS else None,
+            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "64"}],
+        }
+        with yt_dlp.YoutubeDL(options) as downloader:
+            info = downloader.extract_info(video_url, download=True)
+        audio = Path(temp_dir) / "audio.mp3"
+        if not audio.is_file(): raise AudioExtractionError("audio file was not produced")
+        data = audio.read_bytes()
+        if len(base64.b64encode(data)) > ASR_MAX_BASE64_BYTES: raise AudioTooLargeError("base64 audio exceeds 10MB")
+        return data, "mp3", float(info.get("duration") or 0)
+    except TranscriptError:
+        raise
+    except Exception as exc:
+        raise AudioExtractionError(type(exc).__name__) from exc
+
+
+async def _stop_media_process(process: asyncio.subprocess.Process) -> None:
+    # yt-dlp may be waiting for FFmpeg. Killing just the Python parent leaves
+    # that child running and holding files open, especially on Windows.
+    if os.name == "nt":
+        killer = await asyncio.create_subprocess_exec(
+            "taskkill", "/PID", str(process.pid), "/T", "/F",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        await killer.wait()
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    await process.wait()
+
+
+async def _wait_media_cleanup(process: asyncio.subprocess.Process) -> None:
+    cleanup = asyncio.create_task(_stop_media_process(process))
+    # Worker shutdown and its timeout can both cancel the same task. Neither
+    # may release the temporary directory before the process tree is gone.
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            continue
+    await cleanup
+
+
+async def _run_media_process(command: list[str], payload: bytes) -> int:
+    options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
+    spawn = asyncio.create_task(asyncio.create_subprocess_exec(
+        *command, stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        cwd=PROJECT_ROOT, **options,
+    ))
+    process = None
+    try:
+        process = await asyncio.shield(spawn)
+        await process.communicate(payload)
+        return process.returncode
+    except asyncio.CancelledError as cancelled:
+        # Shield creation as well: cancellation can arrive before asyncio
+        # hands back the process handle, and that child must still be reaped.
+        while process is None:
+            try:
+                process = await asyncio.shield(spawn)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                # Failed creation produced no handle to clean up. Preserve
+                # the caller's cancellation instead of turning it into a
+                # recoverable extraction failure and continuing the job.
+                raise cancelled
+        await _wait_media_cleanup(process)
+        raise
+    except Exception:
+        if process is not None:
+            await _wait_media_cleanup(process)
+        raise
+
+
+async def _extract_audio(video_url: str) -> tuple[bytes, str, float]:
     _validate_public_bilibili_url(video_url)
     PROJECT_TMP.mkdir(parents=True, exist_ok=True)
     try:
-        import yt_dlp
         with TemporaryDirectory(prefix="asr-", dir=PROJECT_TMP) as temp_dir:
-            output = str(Path(temp_dir) / "audio.%(ext)s")
-            options = {
-                "format": "bestaudio/best", "outtmpl": output, "noplaylist": True,
-                "quiet": True, "no_warnings": True, "cachedir": False,
-                "match_filter": lambda info, *, incomplete=False: "video too long" if info.get("duration") and info["duration"] > ASR_MAX_VIDEO_SECONDS else None,
-                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "64"}],
-            }
-            with yt_dlp.YoutubeDL(options) as downloader:
-                info = downloader.extract_info(video_url, download=True)
-            candidates = list(Path(temp_dir).glob("audio.*"))
-            if not candidates: raise AudioExtractionError("audio file was not produced")
-            data = candidates[0].read_bytes()
-            if len(base64.b64encode(data)) > ASR_MAX_BASE64_BYTES: raise AudioTooLargeError("base64 audio exceeds 10MB")
-            return data, candidates[0].suffix.lstrip(".").lower(), float(info.get("duration") or 0)
+            payload = json.dumps({"video_url": video_url, "temp_dir": temp_dir}).encode()
+            return_code = await _run_media_process([sys.executable, "-m", "src.tools.media_process"], payload)
+            result_path = Path(temp_dir) / "result.json"
+            if return_code != 0 or not result_path.is_file():
+                raise AudioExtractionError("audio extraction process failed")
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if result.get("error"):
+                error_type = AudioTooLargeError if result["error"] == AudioTooLargeError.code else AudioExtractionError
+                raise error_type(result["error"])
+            return (Path(temp_dir) / "audio.mp3").read_bytes(), "mp3", float(result["duration"])
     except TranscriptError:
         raise
     except Exception as exc:
@@ -158,26 +261,31 @@ def _extract_audio_sync(video_url: str) -> tuple[bytes, str, float]:
 async def _cache_get(key: str) -> dict | None:
     try:
         import redis.asyncio as redis
-        client = redis.from_url(REDIS_URL, decode_responses=True)
+        client = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
         try:
             value = await client.get(key)
-            return json.loads(value) if value else None
+            result = json.loads(value) if value else None
+            if result is not None and not isinstance(result, dict):
+                raise ValueError("invalid transcript cache payload")
+            return result
         finally:
             await client.aclose()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Transcript cache read failed (%s)", type(exc).__name__)
         return None
 
 
 async def _cache_set(keys: list[str], value: dict) -> None:
     try:
         import redis.asyncio as redis
-        client = redis.from_url(REDIS_URL, decode_responses=True)
+        client = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
         try:
             payload = json.dumps(value, ensure_ascii=False)
             for key in keys: await client.set(key, payload, ex=86400 * 30)
         finally:
             await client.aclose()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Transcript cache write failed (%s)", type(exc).__name__)
         return
 
 
@@ -194,13 +302,14 @@ def _cached_transcript(cached: dict) -> dict:
 
 
 async def get_transcript(video_url: str) -> dict | None:
+    _validate_public_bilibili_url(video_url)
     providers = get_transcript_providers()
     if not providers: return None
-    bvid_match = BVID_RE.search(video_url)
+    bvid_match = BVID_RE.search(urlparse(video_url).path)
     bvid_key = f"transcript:bvid:{bvid_match.group(0)}" if bvid_match else f"transcript:url:{hashlib.sha256(video_url.encode()).hexdigest()[:20]}"
     cached = await _cache_get(bvid_key)
     if cached: return _cached_transcript(cached)
-    audio_bytes, audio_format, duration_seconds = await asyncio.to_thread(_extract_audio_sync, video_url)
+    audio_bytes, audio_format, duration_seconds = await _extract_audio(video_url)
     audio_hash = hashlib.sha256(audio_bytes).hexdigest()
     hash_key = f"transcript:audio:{audio_hash}"
     cached = await _cache_get(hash_key)

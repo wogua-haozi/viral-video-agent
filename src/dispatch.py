@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
+from arq.jobs import JobStatus
 from sqlalchemy import and_, or_, select, update
 
 from src.config import DISPATCH_RECONCILE_BATCH_SIZE, DISPATCH_RECONCILE_MIN_AGE_SECONDS, JOB_MAX_RETRIES, JOB_TIMEOUT_SECONDS
@@ -10,6 +12,7 @@ from src.repositories import JobRepository
 
 
 DISPATCH_PENDING_MESSAGE = "任务派发暂时未恢复。系统会稍后自动重试；如需立即处理，可先取消任务。"
+logger = logging.getLogger(__name__)
 
 
 async def recover_expired_jobs(now: datetime) -> int:
@@ -87,6 +90,74 @@ async def recover_expired_jobs(now: datetime) -> int:
     return recovered
 
 
+async def recover_unclaimed_jobs(queue: JobQueue, now: datetime) -> int:
+    """Recover acknowledged deliveries only after Arq confirms they are gone."""
+    cutoff = now - timedelta(seconds=DISPATCH_RECONCILE_MIN_AGE_SECONDS)
+    async with async_session_factory() as db:
+        jobs = await JobRepository(db).lease_unclaimed_dispatches(cutoff, now, DISPATCH_RECONCILE_BATCH_SIZE)
+        leased = [(job.id, job.execution_version, job.arq_job_id) for job in jobs]
+        await db.commit()
+
+    recovered = 0
+    for job_id, version, arq_job_id in leased:
+        try:
+            status = await queue.status(arq_job_id)
+        except Exception as exc:
+            # A Redis outage is not evidence that the delivery was lost.
+            logger.warning("Cannot inspect pending job %s (%s).", job_id, type(exc).__name__)
+            continue
+        if status not in {JobStatus.not_found, JobStatus.complete}:
+            continue
+        async with async_session_factory() as db:
+            job = await JobRepository(db).get_for_update(job_id)
+            if not job or job.status != "pending" or job.execution_version != version or job.arq_job_id != arq_job_id:
+                continue
+            exhausted = job.retry_count >= JOB_MAX_RETRIES
+            message = (
+                "任务多次未能开始执行，已达到重试上限。可调整范围后创建新任务。"
+                if exhausted else "队列任务未能开始执行，正在恢复派发，重试不重复占用额度。"
+            )
+            claimed = await db.execute(
+                update(AnalysisJob)
+                .where(
+                    AnalysisJob.id == job_id, AnalysisJob.status == "pending",
+                    AnalysisJob.execution_version == version,
+                    AnalysisJob.arq_job_id == arq_job_id,
+                    AnalysisJob.dispatch_pending_at == now,
+                )
+                .values(
+                    execution_version=version + 1,
+                    retry_count=job.retry_count if exhausted else job.retry_count + 1,
+                    status="failed" if exhausted else "pending",
+                    arq_job_id=None, worker_token=None, worker_lease_expires_at=None,
+                    started_at=None, completed_at=now if exhausted else None,
+                    dispatch_pending_at=None if exhausted else cutoff,
+                    error_code="WORKER_FAILED" if exhausted else "DISPATCH_PENDING",
+                    error_message=message,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if claimed.rowcount != 1:
+                continue
+            if not exhausted:
+                previous_run = await db.scalar(select(CandidateSynthesisRun).where(
+                    CandidateSynthesisRun.job_id == job_id,
+                    CandidateSynthesisRun.execution_version == version,
+                ))
+                if previous_run:
+                    db.add(CandidateSynthesisRun(
+                        job_id=job_id, decision_batch_id=previous_run.decision_batch_id,
+                        execution_version=version + 1,
+                    ))
+            db.add(JobEvent(
+                job_id=job_id, event_type="failed" if exhausted else "dispatch_unclaimed",
+                message=message, progress=job.progress, level="error" if exhausted else "warning",
+            ))
+            await db.commit()
+            recovered += 1
+    return recovered
+
+
 async def reconcile_pending_dispatches(
     _ctx: dict | None = None,
     *,
@@ -97,6 +168,7 @@ async def reconcile_pending_dispatches(
     queue = queue or JobQueue((_ctx or {}).get("redis"))
     now = now or datetime.now(timezone.utc)
     await recover_expired_jobs(now)
+    await recover_unclaimed_jobs(queue, now)
     cutoff = now - timedelta(seconds=DISPATCH_RECONCILE_MIN_AGE_SECONDS)
 
     async with async_session_factory() as db:

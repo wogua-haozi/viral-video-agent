@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+import aiosqlite
 from arq import Retry
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -155,6 +156,70 @@ async def test_heartbeat_observing_a_committed_terminal_state_exits_cleanly(data
     current, _ = await read_job_and_usage(database, job_id)
     assert current.status == "completed"
     assert current.worker_token == token
+
+
+@pytest.mark.asyncio
+async def test_cancel_finishes_active_heartbeat_cursor_before_settlement(database, monkeypatch):
+    job_id = await new_job(database)
+    entered = asyncio.Event()
+    fetching = asyncio.Event()
+    release_fetch = asyncio.Event()
+    fetch_cancelled = False
+    original_fetch = aiosqlite.Cursor.fetchall
+
+    async def paused_fetch(cursor):
+        nonlocal fetch_cancelled
+        if entered.is_set() and asyncio.current_task().get_coro().__qualname__ == "_heartbeat" and not fetching.is_set():
+            # The SELECT has executed while the heartbeat owns the SQLite
+            # write transaction, but its cursor has not been consumed/closed.
+            fetching.set()
+            try:
+                await release_fetch.wait()
+            except asyncio.CancelledError:
+                fetch_cancelled = True
+                raise
+        return await original_fetch(cursor)
+
+    async def blocking_graph(*_args):
+        cost_tracker.log_usage("analyst", "fixture", 17, 3)
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(aiosqlite.Cursor, "fetchall", paused_fetch)
+    monkeypatch.setattr(worker, "_invoke_graph", blocking_graph)
+    task = asyncio.create_task(worker.run_analysis_job(ctx(), str(job_id), 0))
+    await asyncio.wait_for(fetching.wait(), 2)
+    task.cancel()
+    await asyncio.sleep(0.01)
+    release_fetch.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not fetch_cancelled
+    job, usage = await read_job_and_usage(database, job_id)
+    assert job.status == "pending" and job.worker_token is None
+    assert (usage.input_tokens, usage.output_tokens) == (17, 3)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_stop_grace_is_bounded(monkeypatch):
+    entered = asyncio.Event()
+    cleaned = asyncio.Event()
+
+    async def stalled_heartbeat(_execution, _stop):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaned.set()
+
+    async def completed_work():
+        await entered.wait()
+        return "complete"
+
+    monkeypatch.setattr(worker, "_heartbeat", stalled_heartbeat)
+    monkeypatch.setattr(worker, "WORKER_HEARTBEAT_STOP_GRACE_SECONDS", 0.02)
+    assert await asyncio.wait_for(worker._supervise(completed_work(), None), 1) == "complete"
+    assert cleaned.is_set()
 
 
 @pytest.mark.asyncio
@@ -491,8 +556,11 @@ def install_local_asr(monkeypatch):
         for key in keys:
             cache[key] = dict(value)
 
+    async def extract_audio(url):
+        return url.encode(), "mp3", 60.0
+
     monkeypatch.setattr(transcript_module, "get_transcript_providers", lambda: [Provider()])
-    monkeypatch.setattr(transcript_module, "_extract_audio_sync", lambda url: (url.encode(), "mp3", 60.0))
+    monkeypatch.setattr(transcript_module, "_extract_audio", extract_audio)
     monkeypatch.setattr(transcript_module, "_cache_get", cache_get)
     monkeypatch.setattr(transcript_module, "_cache_set", cache_set)
     return calls
@@ -557,7 +625,7 @@ async def test_researcher_transcripts_share_attempt_usage_across_transports(data
         yield None, None
 
     class Session:
-        def __init__(self, *_args): pass
+        def __init__(self, *_args, **_kwargs): pass
         async def __aenter__(self): return self
         async def __aexit__(self, *_args): pass
         async def initialize(self): pass
@@ -642,7 +710,7 @@ async def test_remote_asr_receipt_survives_cancellation_during_mcp_cleanup(datab
         yield None, None
 
     class Session:
-        def __init__(self, *_args): pass
+        def __init__(self, *_args, **_kwargs): pass
         async def __aenter__(self): return self
         async def __aexit__(self, *_args):
             cleanup_entered.set()
@@ -678,7 +746,10 @@ async def test_parallel_jobs_keep_their_asr_usage_isolated(database, monkeypatch
     arrivals = 0
     both_returned = asyncio.Event()
     durations = {job_ids[0]: 60, job_ids[1]: 90}
-    monkeypatch.setattr(transcript_module, "_extract_audio_sync", lambda url: (url.encode(), "mp3", float(url.rsplit("/", 1)[-1])))
+    async def extract_audio(url):
+        return url.encode(), "mp3", float(url.rsplit("/", 1)[-1])
+
+    monkeypatch.setattr(transcript_module, "_extract_audio", extract_audio)
 
     async def graph(job_id, *_args):
         nonlocal arrivals

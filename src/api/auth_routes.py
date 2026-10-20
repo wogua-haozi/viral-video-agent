@@ -6,7 +6,7 @@ from src.api.errors import AppError
 from src.api.schemas import UserCreate, UserRead
 from src.auth.dependencies import get_current_user
 from src.auth.security import create_access_token, hash_password, verify_password
-from src.config import AUTH_COOKIE_NAME, COOKIE_SECURE, JWT_EXPIRE_MINUTES
+from src.config import AUTH_COOKIE_NAME, COOKIE_SECURE, JWT_EXPIRE_MINUTES, REGISTRATION_ENABLED
 from src.db.models import User
 from src.db.session import get_db
 from src.repositories import UserRepository
@@ -28,6 +28,8 @@ def set_auth_cookie(response: Response, token: str) -> None:
 
 @router.post("/register", response_model=UserRead, status_code=201)
 async def register(payload: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
+    if not REGISTRATION_ENABLED:
+        raise AppError(403, "REGISTRATION_CLOSED", "当前仅向受邀创作者开放，请联系管理员开通账号。")
     repo = UserRepository(db)
     if await repo.get_by_email(str(payload.email)):
         raise AppError(409, "EMAIL_EXISTS", "该邮箱已注册，请直接登录。")

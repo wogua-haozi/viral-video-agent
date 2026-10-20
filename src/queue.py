@@ -1,5 +1,6 @@
 from arq import create_pool
 from arq.connections import RedisSettings
+from arq.jobs import Job, JobStatus
 
 from src.config import REDIS_URL
 
@@ -18,6 +19,14 @@ class JobQueue:
             if owns_pool:
                 await pool.aclose()
         return arq_job_id
+
+    async def status(self, arq_job_id: str) -> JobStatus:
+        pool = self.pool or await create_pool(RedisSettings.from_dsn(REDIS_URL))
+        try:
+            return await Job(arq_job_id, redis=pool, _queue_name=pool.default_queue_name).status()
+        finally:
+            if self.pool is None:
+                await pool.aclose()
 
 
 _job_queue = JobQueue()

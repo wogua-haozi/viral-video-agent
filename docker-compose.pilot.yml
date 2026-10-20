@@ -1,0 +1,47 @@
+# Apply LAST, after the base (and optional local override). Requires modern Compose.
+# Preparation only: never start against an unverified existing database.
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a database password in .env.pilot}
+  redis:
+    ports: !reset []
+  chromadb:
+    ports: !reset []
+  mcp-server:
+    ports: !reset []
+  app:
+    ports: !reset []
+    environment:
+      APP_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET in .env.pilot}
+      REGISTRATION_ENABLED: "false"
+      DATABASE_URL: ${PILOT_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-viral_video}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-viral_video}}
+  worker:
+    environment:
+      APP_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?Set a random JWT_SECRET in .env.pilot}
+      DATABASE_URL: ${PILOT_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-viral_video}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-viral_video}}
+  frontend:
+    ports: !reset []
+  nginx:
+    ports: !reset []
+  pilot-entry:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PILOT_DOMAIN: ${PILOT_DOMAIN:?Set the pilot HTTPS hostname in .env.pilot}
+      PILOT_GATE_USER: ${PILOT_GATE_USER:?Set the pilot entry username in .env.pilot}
+      PILOT_GATE_HASH: ${PILOT_GATE_HASH:?Set the bcrypt hash in .env.pilot}
+    volumes:
+      - ./deploy/Caddyfile.pilot:/etc/caddy/Caddyfile:ro
+      - pilot_tls_data:/data
+      - pilot_tls_config:/config
+    depends_on:
+      - nginx
+
+volumes:
+  pilot_tls_data:
+  pilot_tls_config:

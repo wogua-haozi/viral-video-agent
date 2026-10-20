@@ -1,0 +1,168 @@
+{
+  "fixtureOnly": true,
+  "executedAt": "2026-10-20T09:19:54.760Z",
+  "platform": "win32",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "light default, tablet and enlarged text layouts",
+    "saved dark preference persists; light and dark text and input contrast pass",
+    "mobile hash navigation closes drawer",
+    "mobile navigation Escape returns focus to its trigger",
+    "new inquiry form fits a 320px viewport",
+    "lost creation responses reuse one idempotency key, including after reload",
+    "unresolved submission restores the query after reload",
+    "candidate choices and reasons survive failed polling and reload",
+    "missing candidate decision receives keyboard focus",
+    "candidate submission resumes the existing job once",
+    "cancelled job keeps polling while stopping, then stops after settlement",
+    "cancelled copy respects the server retry limit",
+    "revision 503 and lost responses reuse the persisted payload and key after reload",
+    "unresolved revision drafts are isolated by account and source job",
+    "editing a revision and restoring an earlier payload reuses its key; success clears only that attempt",
+    "uncertain retry (503) reconciles server state and polls pending/running to terminal once",
+    "uncertain retry (lost) reconciles server state and polls pending/running to terminal once",
+    "citation opens evidence; actual zero, missing values, published and fetched time stay distinct",
+    "Bilibili knowledge references are not classified as video samples",
+    "confidence is labeled as uncalibrated model self-assessment",
+    "expanded report and evidence fit a 320px viewport",
+    "dark theme printing uses light paper tokens and hides duplicate detail panels",
+    "initial evidence deep links expand and scroll after asynchronous report load",
+    "login-to-registration preserves the selected template destination",
+    "registration and public examples render in the new theme",
+    "no unhandled browser page errors"
+  ],
+  "pageErrors": [],
+  "contrastResults": {
+    "light": [
+      {
+        "pair": "foreground/background",
+        "ratio": 15.813825387342044,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/card",
+        "ratio": 6.043985415712589,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/muted",
+        "ratio": 5.263137035323776,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary/card",
+        "ratio": 5.742941420362407,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary-foreground/primary",
+        "ratio": 5.742941420362407,
+        "minimum": 4.5
+      },
+      {
+        "pair": "input/surface-elevated",
+        "ratio": 3.4216649273860815,
+        "minimum": 3
+      }
+    ],
+    "dark": [
+      {
+        "pair": "foreground/background",
+        "ratio": 16.137949951019724,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/card",
+        "ratio": 7.604647093602671,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/muted",
+        "ratio": 6.289223226793839,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary/card",
+        "ratio": 7.38209289616415,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary-foreground/primary",
+        "ratio": 8.141023995660543,
+        "minimum": 4.5
+      },
+      {
+        "pair": "input/surface-elevated",
+        "ratio": 3.54088859601539,
+        "minimum": 3
+      }
+    ]
+  },
+  "screenshots": [
+    {
+      "localFilename": "home-desktop-light.png"
+    },
+    {
+      "localFilename": "home-hero-light.png"
+    },
+    {
+      "localFilename": "home-mobile-light.png"
+    },
+    {
+      "localFilename": "home-desktop-dark.png"
+    },
+    {
+      "localFilename": "home-hero-dark.png"
+    },
+    {
+      "localFilename": "home-mobile-dark.png"
+    },
+    {
+      "localFilename": "dashboard-desktop-dark.png"
+    },
+    {
+      "localFilename": "dashboard-desktop-light.png"
+    },
+    {
+      "localFilename": "dashboard-mobile-light.png"
+    },
+    {
+      "localFilename": "new-job-desktop-light.png"
+    },
+    {
+      "localFilename": "new-job-mobile-light.png"
+    },
+    {
+      "localFilename": "job-progress-desktop-light.png"
+    },
+    {
+      "localFilename": "candidates-desktop-light.png"
+    },
+    {
+      "localFilename": "candidates-mobile-dark.png"
+    },
+    {
+      "localFilename": "report-desktop-dark.png"
+    },
+    {
+      "localFilename": "report-desktop-light.png"
+    },
+    {
+      "localFilename": "evidence-desktop-light.png"
+    },
+    {
+      "localFilename": "report-mobile-light.png"
+    },
+    {
+      "localFilename": "register-mobile-light.png"
+    },
+    {
+      "localFilename": "register-desktop-light.png"
+    },
+    {
+      "localFilename": "examples-desktop-light.png"
+    }
+  ],
+  "localArtifactDirectory": "backups/pilot-hardening-20261020/browser-debug/",
+  "screenshotsLocalOnly": true
+}

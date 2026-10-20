@@ -260,7 +260,7 @@ def test_frontend_retry_actions_use_server_capabilities_and_handle_errors():
     assert "job.can_retry &&" in job_page
     assert "job.can_revise &&" in job_page
     assert "setRetryError(readableError(err))" in job_page
-    assert "isLoading={retrying}" in job_page
+    assert "isLoading={retrying || reconcilingRetry}" in job_page
     assert "retryError &&" in job_page and 'role="alert"' in job_page
     assert "job.can_retry &&" in history_page
     assert "setRetryErrors" in history_page

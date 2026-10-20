@@ -171,6 +171,48 @@ async def test_revision_reserves_its_own_slot_once(admission_client, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_revision_replays_committed_job_after_enqueue_503(admission_client, monkeypatch):
+    client, factory, queue = admission_client
+    monkeypatch.setattr(job_routes, "USER_MONTHLY_JOB_LIMIT", 2)
+    created = await client.post("/jobs", json=payload())
+    job_id = uuid.UUID(created.json()["id"])
+    async with factory() as db:
+        source = await db.get(AnalysisJob, job_id)
+        source.status = "waiting_user"
+        await db.commit()
+
+    async def unavailable_queue(job_id, execution_version=0):
+        queue.calls.append((job_id, execution_version))
+        raise ConnectionError("fixture queue unavailable")
+
+    monkeypatch.setattr(queue, "enqueue", unavailable_queue)
+    revised_payload = {"query": "只看相机测评账号的开场结构", "idempotency_key": "revision-lost-response"}
+    failed_response = await client.post(f"/jobs/{job_id}/revisions", json=revised_payload)
+    assert failed_response.status_code == 503
+    assert (await client.get(f"/jobs/{job_id}")).json()["status"] == "cancelled"
+    async with factory() as db:
+        revised = await db.scalar(select(AnalysisJob).where(AnalysisJob.revision_of_job_id == job_id))
+        revised_id = str(revised.id)
+        assert revised.status == "failed"
+        # Replaying a committed request must work even if the source has since
+        # resumed and would no longer admit a new revision.
+        source = await db.get(AnalysisJob, job_id)
+        source.status = "running"
+        await db.commit()
+
+    replay = await client.post(f"/jobs/{job_id}/revisions", json=revised_payload)
+    assert replay.status_code == 202 and replay.json()["id"] == revised_id
+    assert replay.json()["revision_of_job_id"] == str(job_id)
+    assert (await client.get("/usage")).json()["jobs_used"] == 2
+    conflict = await client.post(f"/jobs/{job_id}/revisions", json={**revised_payload, "query": "改为研究不同的内容"})
+    assert conflict.status_code == 409 and conflict.json()["error_code"] == "JOB_REVISION_CONFLICT"
+    async with factory() as db:
+        assert await db.scalar(select(func.count()).select_from(AnalysisJob)) == 2
+        assert await db.scalar(select(func.count()).select_from(UsageRecord)) == 2
+    assert len(queue.calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_usage_checkpoints_count_each_attempt_and_interaction_once(admission_client):
     client, factory, _ = admission_client
     created = await client.post("/jobs", json=payload())

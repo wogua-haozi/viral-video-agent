@@ -58,6 +58,7 @@ JWT_ALGORITHM: str = "HS256"
 JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
 AUTH_COOKIE_NAME: str = os.getenv("AUTH_COOKIE_NAME", "viral_video_session")
 COOKIE_SECURE: bool = APP_ENV == "production"
+REGISTRATION_ENABLED: bool = os.getenv("REGISTRATION_ENABLED", "true").lower() == "true"
 JOB_TIMEOUT_SECONDS: int = int(os.getenv("JOB_TIMEOUT_SECONDS", "600"))
 JOB_MAX_RETRIES: int = int(os.getenv("JOB_MAX_RETRIES", "2"))
 WORKER_MAX_JOBS: int = int(os.getenv("WORKER_MAX_JOBS", "2"))

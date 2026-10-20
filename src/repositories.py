@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -91,6 +91,36 @@ class JobRepository:
         for job in jobs:
             job.dispatch_pending_at = leased_at
         return jobs
+    async def lease_unclaimed_dispatches(self, cutoff: datetime, leased_at: datetime, limit: int) -> list[AnalysisJob]:
+        filters = (
+            AnalysisJob.status == "pending",
+            AnalysisJob.arq_job_id.is_not(None),
+            func.coalesce(AnalysisJob.started_at, AnalysisJob.created_at) <= cutoff,
+            or_(AnalysisJob.dispatch_pending_at.is_(None), AnalysisJob.dispatch_pending_at <= cutoff),
+        )
+        jobs = list((await self.db.scalars(
+            select(AnalysisJob).where(*filters)
+            .order_by(
+                func.coalesce(AnalysisJob.dispatch_pending_at, AnalysisJob.started_at, AnalysisJob.created_at),
+                AnalysisJob.id,
+            ).limit(limit)
+            .with_for_update(skip_locked=True)
+        )).all())
+        leased = []
+        for job in jobs:
+            result = await self.db.execute(
+                update(AnalysisJob)
+                .where(
+                    *filters, AnalysisJob.id == job.id,
+                    AnalysisJob.execution_version == job.execution_version,
+                    AnalysisJob.arq_job_id == job.arq_job_id,
+                )
+                .values(dispatch_pending_at=leased_at)
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount == 1:
+                leased.append(job)
+        return leased
     async def clear_outputs(self, job_id: uuid.UUID) -> None:
         await self.db.execute(delete(EvidenceItem).where(EvidenceItem.job_id == job_id))
         await self.db.execute(delete(Report).where(Report.job_id == job_id))

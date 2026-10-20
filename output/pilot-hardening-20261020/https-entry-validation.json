@@ -1,0 +1,33 @@
+{
+  "fixtureOnly": true,
+  "entryConfiguration": "deploy/Caddyfile.pilot",
+  "server": "v2.11.7 h1:yj0Y4fYZGPkSvibBJ1sTWE33xC0fxztVyXEW5iIdUT4=",
+  "tls": "local Caddy certificate; no public deployment or ACME test",
+  "checks": [
+    {
+      "path": "/",
+      "unauthenticatedStatus": 401
+    },
+    {
+      "path": "/login",
+      "unauthenticatedStatus": 401
+    },
+    {
+      "path": "/api/auth/register",
+      "unauthenticatedStatus": 401
+    },
+    {
+      "path": "/api/jobs",
+      "unauthenticatedStatus": 401
+    },
+    {
+      "path": "/api/shares/fixture",
+      "unauthenticatedStatus": 401
+    }
+  ],
+  "incorrectGatePasswordStatus": 401,
+  "authenticatedUpstreamStatus": 200,
+  "gateCredentialsRemovedBeforeUpstream": true,
+  "publishedAddress": "127.0.0.1",
+  "businessServicesStarted": false
+}

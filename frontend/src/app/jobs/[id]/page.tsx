@@ -8,7 +8,8 @@ import { AppShell } from '@/components/AppShell';
 import { CandidateConfirmation } from '@/components/CandidateConfirmation';
 import { JobProgress } from '@/components/product';
 import { Button, Card, ErrorState, LoadingState, StatusBadge, Textarea } from '@/components/ui';
-import { answerJobClarification, cancelJob, getJob, getJobCandidates, getJobClarification, getJobEvents, readableError, retryJob, reviseJob, type CandidateSnapshot, type ClarificationRequest, type Job, type JobEvent } from '@/lib/api';
+import { answerJobClarification, cancelJob, getCurrentUser, getJob, getJobCandidates, getJobClarification, getJobEvents, readableError, retryJob, reviseJob, type CandidateSnapshot, type ClarificationRequest, type Job, type JobEvent } from '@/lib/api';
+import { clearRevisionAttempt, readRevisionAttempts, RevisionStorageError, saveRevisionAttempt } from '@/lib/revision-attempt';
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,12 +34,14 @@ export default function JobPage() {
   const [answerError, setAnswerError] = useState('');
   const [retryError, setRetryError] = useState('');
   const [retrying, setRetrying] = useState(false);
+  const [reconcilingRetry, setReconcilingRetry] = useState(false);
+  const retryVersion = useRef<number | null>(null);
   const [showRevision, setShowRevision] = useState(revisionMode);
   const [revisionQuery, setRevisionQuery] = useState('');
   const [revisionError, setRevisionError] = useState('');
   const [revising, setRevising] = useState(false);
-  const revisionKey = useRef('');
-  const revisionFingerprint = useRef('');
+  const [revisionUserId, setRevisionUserId] = useState<string | null>(null);
+  const [revisionIdentityEpoch, setRevisionIdentityEpoch] = useState(0);
   const jobRef = useRef<Job | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -53,6 +56,11 @@ export default function JobPage() {
       jobRef.current = jobData;
       setJob(jobData);
       setError('');
+      if (retryVersion.current !== null) {
+        if (jobData.execution_version > retryVersion.current || ['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(jobData.status)) setRetryError('');
+        retryVersion.current = null;
+        setReconcilingRetry(false);
+      }
       if (jobData.status !== 'waiting_candidate_confirmation') setCandidateSnapshot(null);
       if (jobData.status !== 'waiting_user') setClarification(null);
       const [eventResult, briefResult, candidateResult] = await Promise.allSettled([
@@ -74,6 +82,7 @@ export default function JobPage() {
         setRevisionQuery((current) => current || jobData.query);
       }
       if (!revisionMode && jobData.report_id && ['completed', 'partial'].includes(jobData.status)) router.replace(`/reports/${jobData.report_id}`);
+      return jobData;
     } catch (err) {
       if (signal.aborted) return;
       // A background refresh must never unmount an in-progress confirmation form.
@@ -83,6 +92,23 @@ export default function JobPage() {
       if (!signal.aborted) setLoading(false);
     }
   }, [id, revisionMode, router]);
+
+  useEffect(() => {
+    let disposed = false;
+    setRevisionUserId(null);
+    setRevisionQuery('');
+    setRevisionError('');
+    setShowRevision(revisionMode);
+    void getCurrentUser().then((user) => {
+      if (disposed) return;
+      const attempts = readRevisionAttempts(user.id, id);
+      const latest = attempts[attempts.length - 1];
+      setRevisionUserId(user.id);
+      if (latest) { setRevisionQuery(latest.query); setShowRevision(true); }
+      else setRevisionQuery((current) => current || jobRef.current?.query || '');
+    }).catch((err) => { if (!disposed) setRevisionError(err instanceof RevisionStorageError ? err.message : readableError(err)); });
+    return () => { disposed = true; };
+  }, [id, revisionMode, revisionIdentityEpoch]);
 
   useEffect(() => {
     let disposed = false;
@@ -96,17 +122,13 @@ export default function JobPage() {
     setCandidateSnapshot(null);
     setSelectedOption('');
     setCustomAnswer('');
-    setShowRevision(revisionMode);
-    setRevisionQuery('');
-    revisionKey.current = '';
-    revisionFingerprint.current = '';
     const poll = async () => {
       const version = ++pollVersion;
       clearTimeout(timer);
-      await load();
+      const current = await load();
       if (disposed || version !== pollVersion) return;
       const status = jobRef.current?.status;
-      if (status && ['completed', 'partial', 'failed', 'cancelled'].includes(status) && !jobRef.current?.is_stopping) return;
+      if (current && ['completed', 'partial', 'failed', 'cancelled'].includes(current.status) && !current.is_stopping) return;
       timer = setTimeout(poll, document.hidden ? 15000 : status?.startsWith('waiting_') ? 8000 : 3500);
     };
     const onVisibility = () => { if (!document.hidden) void poll(); };
@@ -132,25 +154,35 @@ export default function JobPage() {
       setPollingEpoch((value) => value + 1);
     } catch (err) {
       setRetryError(readableError(err));
-      await load();
+      retryVersion.current = jobRef.current?.execution_version ?? 0;
+      setReconcilingRetry(true);
+      // The POST may have committed. Read the server again, and keep polling
+      // through connection failures or an accepted pending/running attempt.
+      setPollingEpoch((value) => value + 1);
     } finally {
       setRetrying(false);
     }
   };
-  const openRevision = () => { if (!job) return; setRevisionQuery(job.query); setRevisionError(''); setShowRevision(true); };
+  const openRevision = () => { if (!job) return; setRevisionQuery((current) => current || job.query); setShowRevision(true); };
   const revise = async () => {
-    if (!job || !revisionQuery.trim() || revisionQuery.trim() === job.query.trim()) return;
+    if (!job || !revisionUserId || !revisionQuery.trim() || revisionQuery.trim() === job.query.trim()) return;
     setRevising(true);
     setRevisionError('');
-    if (!revisionKey.current || revisionFingerprint.current !== revisionQuery.trim()) {
-      revisionKey.current = crypto.randomUUID();
-      revisionFingerprint.current = revisionQuery.trim();
-    }
     try {
-      const revised = await reviseJob(id, { query: revisionQuery.trim(), idempotency_key: revisionKey.current });
+      const user = await getCurrentUser();
+      if (user.id !== revisionUserId) {
+        const attempts = readRevisionAttempts(user.id, id);
+        setRevisionUserId(user.id);
+        setRevisionQuery(attempts[attempts.length - 1]?.query || job.query);
+        setRevisionError('登录账号已变化，请确认当前账号的研究范围后再提交。');
+        return;
+      }
+      const attempt = saveRevisionAttempt(user.id, id, revisionQuery.trim());
+      const revised = await reviseJob(id, attempt);
+      clearRevisionAttempt(user.id, id, attempt);
       router.replace(`/jobs/${revised.id}`);
     } catch (err) {
-      setRevisionError(readableError(err));
+      setRevisionError(err instanceof RevisionStorageError ? err.message : readableError(err));
     } finally {
       setRevising(false);
     }
@@ -183,7 +215,7 @@ export default function JobPage() {
             <Link href="/history" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="h-4 w-4" aria-hidden="true" />返回任务列表</Link>
             <div className="mt-4 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-start">
               <div className="min-w-0"><p className="eyebrow">研究任务 · {job.id.slice(0, 6)}</p><h1 className="break-content title-balance mt-3 font-display text-2xl font-semibold leading-relaxed sm:text-3xl">{job.query}</h1><div className="mt-4 flex flex-wrap items-center gap-3"><StatusBadge status={job.status} /><span className="font-mono text-xs tabular-nums text-muted-foreground">{job.progress}%</span><span className="text-xs text-muted-foreground">B站 · {job.analysis_mode === 'deep' ? '内容深度分析' : '标准分析'}</span></div></div>
-              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="secondary" className="text-destructive" size="sm" onClick={cancel} isLoading={cancelling}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重试任务</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}</p>}{cancelError && <p className="max-w-sm text-sm text-destructive" role="alert">{cancelError}</p>}</div>
+              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="secondary" className="text-destructive" size="sm" onClick={cancel} isLoading={cancelling}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying || reconcilingRetry}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重试任务</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}{reconcilingRetry && ' 正在核对服务器上的任务状态，请稍候。'}</p>}{cancelError && <p className="max-w-sm text-sm text-destructive" role="alert">{cancelError}</p>}</div>
             </div>
 
             {refreshError && <div className="mt-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center" role="status"><p className="flex-1 text-sm leading-7">状态更新暂时中断，已保留当前内容与选择。{refreshError}</p><Button variant="secondary" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />重新连接</Button></div>}
@@ -197,9 +229,10 @@ export default function JobPage() {
                 <h2 className="mt-2 text-lg font-bold">创建修订任务</h2>
                 <p className="mt-1 text-sm leading-7 text-muted-foreground">旧任务和回答会保留。修订将创建新任务，并占用 1 次本月额度。</p>
                 <label htmlFor="revision-query" className="mt-4 block text-sm font-semibold">新的研究范围</label>
-                <Textarea id="revision-query" className="mt-2 min-h-24" maxLength={2000} value={revisionQuery} onChange={(event) => setRevisionQuery(event.target.value)} />
+                <Textarea id="revision-query" className="mt-2 min-h-24" maxLength={2000} value={revisionQuery} disabled={!revisionUserId || revising} onChange={(event) => setRevisionQuery(event.target.value)} />
                 {revisionError && <p className="mt-2 text-sm text-destructive" role="alert">{revisionError}</p>}
-                <div className="mt-3 flex flex-wrap gap-2"><Button onClick={revise} isLoading={revising} disabled={!revisionQuery.trim() || revisionQuery.trim() === job.query.trim()}>创建修订任务</Button><Button variant="ghost" onClick={() => setShowRevision(false)} disabled={revising}>取消</Button></div>
+                {revisionError && !revisionUserId && <Button variant="secondary" size="sm" className="mt-2" onClick={() => setRevisionIdentityEpoch((value) => value + 1)}>重新读取修订草稿</Button>}
+                <div className="mt-3 flex flex-wrap gap-2"><Button onClick={revise} isLoading={revising} disabled={!revisionUserId || !revisionQuery.trim() || revisionQuery.trim() === job.query.trim()}>创建修订任务</Button><Button variant="ghost" onClick={() => setShowRevision(false)} disabled={revising}>取消</Button></div>
               </Card>
             )}
 
@@ -223,7 +256,7 @@ export default function JobPage() {
             )}
 
             {job.status === 'waiting_candidate_confirmation' && job.can_confirm_candidates && candidateSnapshot && (
-              <CandidateConfirmation key={candidateSnapshot.snapshot_id} jobId={job.id} snapshot={candidateSnapshot} onSubmitted={load} />
+              <CandidateConfirmation key={candidateSnapshot.snapshot_id} jobId={job.id} snapshot={candidateSnapshot} onSubmitted={async () => { await load(); }} />
             )}
 
             {clarificationHistory.length > 0 && (

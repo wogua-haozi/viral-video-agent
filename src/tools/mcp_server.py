@@ -1,4 +1,8 @@
-from mcp.server.fastmcp import FastMCP
+import asyncio
+import logging
+
+import anyio
+from mcp.server.fastmcp import Context, FastMCP
 
 from src.tools.rag_retrieval import rag_search
 from src.tools.search import search_videos
@@ -13,6 +17,7 @@ mcp = FastMCP(
     sse_path="/sse",
     message_path="/messages/",
 )
+logger = logging.getLogger(__name__)
 
 
 @mcp.tool(name="search_videos")
@@ -22,9 +27,25 @@ async def search_videos_tool(keyword: str, platforms: list[str], limit: int = 10
 
 
 @mcp.tool(name="get_transcript")
-async def get_transcript_tool(video_url: str) -> dict | None:
+async def get_transcript_tool(video_url: str, ctx: Context = None) -> dict | None:
     """获取结构化视频转写结果。"""
-    return await get_transcript(video_url)
+    try:
+        return await get_transcript(video_url)
+    except asyncio.CancelledError:
+        # get_transcript only propagates cancellation after its media process
+        # tree and temporary files are cleaned. The SDK cancellation response
+        # is sent earlier, so acknowledge completion separately and correlate
+        # it with the public request ID. No URL or provider data is included.
+        if ctx is not None:
+            with anyio.CancelScope(shield=True):
+                try:
+                    await asyncio.wait_for(ctx.session.send_log_message(
+                        level="info", logger="viral-video.transcript",
+                        data={"requestId": ctx.request_context.request_id, "cleanup_complete": True},
+                    ), timeout=1)
+                except Exception as exc:
+                    logger.warning("MCP transcript cleanup acknowledgement failed (%s)", type(exc).__name__)
+        raise
 
 
 @mcp.tool(name="rag_search")
