@@ -6,9 +6,9 @@
 
 当前主线：**稳定性与试用入口完善 → 工程验证并推送 → 网页 ChatGPT 只读复审 → 用户本地真实任务与报告质量验收 → 小范围创作者试用 → 反馈迭代**。本轮不自动部署或调用收费服务。
 
-当前阶段：试用前工程补强后，根据只读复审再补齐“快速领取后重试失败”和“重试断连后延迟提交”两个恢复时序。工程检查与真实业务验收分开记录；后续任务和唯一验收清单见项目状态页。完整业务运行及真实报告质量仍等待用户验收。
+当前阶段：试用前工程补强及两个恢复时序补修已完成并推送（`d78f981`）。2026-10-20 用户转述网页只读复审结论：本轮两个修复通过，未发现需先返修的新问题，可以进入本地真实验收。完整业务链路与报告质量通过后，再邀请少量创作者试用；唯一任务清单见项目状态页。
 
-2026-10-20 为本轮回归重新创建了独立 `.venv`，按原依赖声明安装，并以 `npm ci` 恢复前端依赖。保留简洁柔和的界面及 10/18 展示图；本轮未改变视觉设计。运行、停止与数据保护见 [本地运行手册](docs/local-development.md)。
+2026-10-20 工程回归完成后，已按用户要求清理本项目 `.venv`、前端 `node_modules`/`.next` 及 Python/pytest 缓存；源码、真实配置、数据、恢复备份和验收截图保留。宿主开发需先恢复依赖；Docker 自行构建镜像，不依赖这些宿主目录。保留简洁柔和界面及 10/18 展示图。运行、停止与数据保护见 [本地运行手册](docs/local-development.md)。
 
 - [项目状态、实际验收与唯一任务清单](docs/project-status.md)
 - [Windows 启动、停止、测试与数据库备份回退](docs/local-development.md)
@@ -304,7 +304,7 @@ Worker 镜像内置 `ffmpeg` 和 `yt-dlp`。内容深度分析只处理公开可
 
 ## 测试
 
-依赖缺失时先按 [本地运行手册](docs/local-development.md) 恢复 Python 与前端依赖；本机本轮已恢复。
+本机已清理可重建的依赖与构建；运行下面的宿主检查前，先按 [本地运行手册](docs/local-development.md) 恢复独立 Python 环境与前端依赖。
 
 ```powershell
 # Python
@@ -320,7 +320,7 @@ cd ..
 docker compose config --quiet
 ```
 
-本机验收统一见 [项目状态](docs/project-status.md)，2026-10-20 恢复时序补修的 [工程摘要](output/pilot-recovery-timing-20261020/engineering-validation.json) 记录 **300 项后端、31 项浏览器**及 lint/build 通过；`580b7f9` 的 296/26 项保留为 [首轮历史结果](output/pilot-hardening-20261020/engineering-validation.json)。仍等待补修后的网页只读复审和用户完整业务/真实报告验收。2026-07 的 vNext-C 工程通过与冻结结论见 [历史验收](docs/interactive-intelligence-vnext-c-validation-20260725.md)，不替代报告质量验收。
+本机验收统一见 [项目状态](docs/project-status.md)，`d78f981` 的 [工程摘要](output/pilot-recovery-timing-20261020/engineering-validation.json) 记录 **300 项后端、31 项浏览器**及 lint/build 通过；`580b7f9` 的 296/26 项保留为 [首轮历史结果](output/pilot-hardening-20261020/engineering-validation.json)。上述结果属于清理前的工程验证，本次整理未重跑；网页只读复审已由用户转述通过，仍等待用户完整业务/真实报告验收。2026-07 的 vNext-C 工程通过与冻结结论见 [历史验收](docs/interactive-intelligence-vnext-c-validation-20260725.md)，不替代报告质量验收。
 
 ### 历史真实 API 冒烟（2026-07-13）
 
