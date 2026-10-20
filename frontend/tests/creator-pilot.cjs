@@ -25,6 +25,9 @@ let revisionOutcome = 'ok';
 let retryOutcome = 'ok';
 let retryRequests = 0;
 let retryStateReads = null;
+let retryCommitAfterReads = null;
+let blockJobReads = false;
+const staleRetryReads = [];
 const creates = [];
 const serverJobs = new Map();
 const revisions = [];
@@ -78,6 +81,15 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
       }
       if (endpoint === '/jobs/fixture-job/retry') {
         retryRequests++;
+        if (retryOutcome === 'rejected') return json({ error_code: 'JOB_RETRY_LIMIT_REACHED', message: '演示：这个任务已达到重试上限。' }, 409);
+        if (retryOutcome === 'delayed' || retryOutcome === 'unconfirmed') {
+          retryCommitAfterReads = retryOutcome === 'delayed' ? 3 : Infinity;
+          return route.abort('failed');
+        }
+        if (retryOutcome === 'blocked408') {
+          retryCommitAfterReads = Infinity; failJobOnce = true; blockJobReads = true;
+          return json({ error_code: 'REQUEST_FAILED', message: '演示：代理请求超时，结果未知。' }, 408);
+        }
         job = { ...job, status: 'pending', progress: 0, execution_version: job.execution_version + 1, can_retry: false, can_revise: false };
         retryStateReads = 0;
         if (retryOutcome === 'lost') return route.abort('failed');
@@ -92,7 +104,20 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
       if (endpoint === '/jobs/fixture-job') {
         jobReads++;
         if (failJobOnce) { failJobOnce = false; return route.abort('failed'); }
+        // Leave the request unresolved to verify the confirmation deadline also
+        // works when the network never returns a response.
+        if (blockJobReads) return;
         if (job.is_stopping && settleStopping) job = { ...job, is_stopping: false, can_retry: true, can_revise: true };
+        if (retryCommitAfterReads !== null) {
+          if (retryCommitAfterReads > 0) {
+            staleRetryReads.push({ status: job.status, execution_version: job.execution_version });
+            retryCommitAfterReads--;
+            return json(job);
+          }
+          retryCommitAfterReads = null;
+          job = { ...job, status: 'pending', progress: 0, execution_version: job.execution_version + 1, can_retry: false, can_revise: false };
+          retryStateReads = 0;
+        }
         if (retryStateReads !== null) {
           retryStateReads++;
           if (retryStateReads === 2) job = { ...job, status: 'running', progress: 50 };
@@ -253,6 +278,58 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
       const completedAt = jobReads; await page.waitForTimeout(4000); assert.equal(jobReads, completedAt);
       pass(`uncertain retry (${outcome}) reconciles server state and polls pending/running to terminal once`);
     }
+    for (const oldStatus of ['failed', 'cancelled']) {
+      job = { ...baseline, status: oldStatus, progress: 0, can_retry: true, can_revise: true };
+      retryOutcome = 'delayed';
+      await page.goto(`${baseURL}/jobs/fixture-job`);
+      await page.getByRole('button', { name: '重试任务', exact: true }).waitFor();
+      const requestsBefore = retryRequests;
+      const staleReadsBefore = staleRetryReads.length;
+      await page.getByRole('button', { name: '重试任务', exact: true }).click();
+      await page.getByText('研究记录已保存。', { exact: true }).waitFor({ timeout: 25000 });
+      assert.deepEqual(staleRetryReads.slice(staleReadsBefore), Array.from({ length: 3 }, () => ({ status: oldStatus, execution_version: 0 })));
+      assert.equal(retryRequests, requestsBefore + 1); assert.equal(job.execution_version, 1);
+      assert.equal(await page.getByRole('main').getByRole('alert').count(), 0);
+      pass(`retry response lost before commit keeps checking through repeated old ${oldStatus} state`);
+    }
+    job = { ...baseline, status: 'failed', progress: 0, can_retry: true, can_revise: true };
+    retryOutcome = 'unconfirmed';
+    await page.goto(`${baseURL}/jobs/fixture-job`); await page.getByRole('button', { name: '重试任务', exact: true }).click();
+    const uncertainRequests = retryRequests;
+    const resumeCheck = page.getByRole('button', { name: '继续核对重试结果', exact: true });
+    await resumeCheck.waitFor({ timeout: 25000 });
+    await page.getByText('重试结果仍未确认。请稍后继续核对，避免重复提交。', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '重试任务', exact: true }).isDisabled(), true);
+    await fit('unconfirmed retry');
+    await screenshot('retry-unconfirmed.png');
+    const pausedAt = jobReads; await page.waitForTimeout(4000); assert.equal(jobReads, pausedAt);
+    retryCommitAfterReads = 0;
+    await resumeCheck.click();
+    await page.getByText('研究记录已保存。', { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(retryRequests, uncertainRequests); assert.equal(job.execution_version, 1);
+    assert.equal(await page.getByRole('main').getByRole('alert').count(), 0);
+    pass('retry reconciliation is bounded; manual recovery only reads and does not submit again');
+    job = { ...baseline, status: 'failed', progress: 0, can_retry: true, can_revise: true };
+    retryOutcome = 'blocked408';
+    await page.goto(`${baseURL}/jobs/fixture-job`); await page.getByRole('button', { name: '重试任务', exact: true }).click();
+    const blockedRequests = retryRequests;
+    await resumeCheck.waitFor({ timeout: 25000 });
+    assert.equal(await page.getByRole('button', { name: '重试任务', exact: true }).isDisabled(), true);
+    const blockedAt = jobReads; await page.waitForTimeout(4000); assert.equal(jobReads, blockedAt);
+    blockJobReads = false; retryCommitAfterReads = 0;
+    await page.getByRole('button', { name: '重新连接', exact: true }).click();
+    await page.getByText('研究记录已保存。', { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(retryRequests, blockedRequests); assert.equal(job.execution_version, 1);
+    assert.equal(await page.getByRole('main').getByRole('alert').count(), 0);
+    pass('proxy 408 stays uncertain; failed and hung reads time out and reconnect only resumes reading');
+    job = { ...baseline, status: 'failed', progress: 0, can_retry: true, can_revise: true };
+    retryOutcome = 'rejected';
+    await page.goto(`${baseURL}/jobs/fixture-job`); await page.getByRole('button', { name: '重试任务', exact: true }).click();
+    await page.getByText('演示：这个任务已达到重试上限。', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '重试任务', exact: true }).isEnabled(), true);
+    assert.equal(await resumeCheck.count(), 0);
+    const rejectedAt = jobReads; await page.waitForTimeout(4000); assert.equal(jobReads, rejectedAt);
+    pass('explicit retry rejection does not enter uncertain reconciliation');
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${baseURL}/reports/fixture-report`); await page.getByRole('heading', { name: report.title }).first().waitFor();
     assert.equal(await page.locator('#report-claims').getAttribute('open'), null); assert.equal(await page.locator('#report-evidence').getAttribute('open'), null);
     await screenshot('report-desktop-dark.png'); await page.getByRole('button', { name: '切换到浅色主题' }).click(); await screenshot('report-desktop-light.png');

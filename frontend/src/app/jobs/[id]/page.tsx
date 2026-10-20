@@ -8,8 +8,11 @@ import { AppShell } from '@/components/AppShell';
 import { CandidateConfirmation } from '@/components/CandidateConfirmation';
 import { JobProgress } from '@/components/product';
 import { Button, Card, ErrorState, LoadingState, StatusBadge, Textarea } from '@/components/ui';
-import { answerJobClarification, cancelJob, getCurrentUser, getJob, getJobCandidates, getJobClarification, getJobEvents, readableError, retryJob, reviseJob, type CandidateSnapshot, type ClarificationRequest, type Job, type JobEvent } from '@/lib/api';
+import { ApiError, answerJobClarification, cancelJob, getCurrentUser, getJob, getJobCandidates, getJobClarification, getJobEvents, readableError, retryJob, reviseJob, type CandidateSnapshot, type ClarificationRequest, type Job, type JobEvent } from '@/lib/api';
 import { clearRevisionAttempt, readRevisionAttempts, RevisionStorageError, saveRevisionAttempt } from '@/lib/revision-attempt';
+
+const RETRY_CONFIRMATION_MS = 20_000;
+const RETRY_REJECTION_CODES = new Set(['JOB_NOT_FOUND', 'JOB_STOPPING', 'JOB_RETRY_LIMIT_REACHED', 'JOB_NOT_RETRYABLE', 'AUTH_REQUIRED']);
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,7 +38,9 @@ export default function JobPage() {
   const [retryError, setRetryError] = useState('');
   const [retrying, setRetrying] = useState(false);
   const [reconcilingRetry, setReconcilingRetry] = useState(false);
+  const [retryUnconfirmed, setRetryUnconfirmed] = useState(false);
   const retryVersion = useRef<number | null>(null);
+  const retryDeadline = useRef<number | null>(null);
   const [showRevision, setShowRevision] = useState(revisionMode);
   const [revisionQuery, setRevisionQuery] = useState('');
   const [revisionError, setRevisionError] = useState('');
@@ -56,10 +61,12 @@ export default function JobPage() {
       jobRef.current = jobData;
       setJob(jobData);
       setError('');
-      if (retryVersion.current !== null) {
-        if (jobData.execution_version > retryVersion.current || ['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(jobData.status)) setRetryError('');
+      if (retryVersion.current !== null && jobData.execution_version > retryVersion.current) {
+        setRetryError('');
         retryVersion.current = null;
+        retryDeadline.current = null;
         setReconcilingRetry(false);
+        setRetryUnconfirmed(false);
       }
       if (jobData.status !== 'waiting_candidate_confirmation') setCandidateSnapshot(null);
       if (jobData.status !== 'waiting_user') setClarification(null);
@@ -111,9 +118,6 @@ export default function JobPage() {
   }, [id, revisionMode, revisionIdentityEpoch]);
 
   useEffect(() => {
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let pollVersion = 0;
     jobRef.current = null;
     setJob(null);
     setLoading(true);
@@ -122,19 +126,46 @@ export default function JobPage() {
     setCandidateSnapshot(null);
     setSelectedOption('');
     setCustomAnswer('');
+    retryVersion.current = null;
+    retryDeadline.current = null;
+    setRetryError('');
+    setReconcilingRetry(false);
+    setRetryUnconfirmed(false);
+  }, [load]);
+
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let confirmationTimer: ReturnType<typeof setTimeout> | undefined;
+    let pollVersion = 0;
+    if (retryDeadline.current !== null) {
+      confirmationTimer = setTimeout(() => {
+        if (retryVersion.current === null) return;
+        retryDeadline.current = null;
+        setReconcilingRetry(false);
+        setRetryUnconfirmed(true);
+        setLoading(false);
+        ++pollVersion;
+        clearTimeout(timer);
+        controllerRef.current?.abort();
+      }, Math.max(0, retryDeadline.current - Date.now()));
+    }
     const poll = async () => {
+      if (retryVersion.current !== null && retryDeadline.current === null) return;
       const version = ++pollVersion;
       clearTimeout(timer);
       const current = await load();
       if (disposed || version !== pollVersion) return;
       const status = jobRef.current?.status;
-      if (current && ['completed', 'partial', 'failed', 'cancelled'].includes(current.status) && !current.is_stopping) return;
+      // A disconnected POST may commit after several reads of the old terminal
+      // version. Only a newer version or an explicit POST rejection resolves it.
+      if (retryVersion.current === null && current && ['completed', 'partial', 'failed', 'cancelled'].includes(current.status) && !current.is_stopping) return;
       timer = setTimeout(poll, document.hidden ? 15000 : status?.startsWith('waiting_') ? 8000 : 3500);
     };
     const onVisibility = () => { if (!document.hidden) void poll(); };
     void poll();
     document.addEventListener('visibilitychange', onVisibility);
-    return () => { disposed = true; clearTimeout(timer); controllerRef.current?.abort(); document.removeEventListener('visibilitychange', onVisibility); };
+    return () => { disposed = true; clearTimeout(timer); clearTimeout(confirmationTimer); controllerRef.current?.abort(); document.removeEventListener('visibilitychange', onVisibility); };
   }, [load, revisionMode, pollingEpoch]);
 
   const cancel = async () => {
@@ -144,6 +175,8 @@ export default function JobPage() {
     finally { setCancelling(false); }
   };
   const retry = async () => {
+    if (retrying || retryVersion.current !== null) return;
+    const submittedVersion = jobRef.current?.execution_version ?? 0;
     setRetrying(true);
     setRetryError('');
     try {
@@ -154,7 +187,12 @@ export default function JobPage() {
       setPollingEpoch((value) => value + 1);
     } catch (err) {
       setRetryError(readableError(err));
-      retryVersion.current = jobRef.current?.execution_version ?? 0;
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500 && RETRY_REJECTION_CODES.has(err.code)) {
+        setPollingEpoch((value) => value + 1);
+        return;
+      }
+      retryVersion.current = submittedVersion;
+      retryDeadline.current = Date.now() + RETRY_CONFIRMATION_MS;
       setReconcilingRetry(true);
       // The POST may have committed. Read the server again, and keep polling
       // through connection failures or an accepted pending/running attempt.
@@ -162,6 +200,17 @@ export default function JobPage() {
     } finally {
       setRetrying(false);
     }
+  };
+  const resumeRetryCheck = () => {
+    if (retryVersion.current === null) return;
+    retryDeadline.current = Date.now() + RETRY_CONFIRMATION_MS;
+    setRetryUnconfirmed(false);
+    setReconcilingRetry(true);
+    setPollingEpoch((value) => value + 1);
+  };
+  const reconnect = () => {
+    if (retryVersion.current !== null) resumeRetryCheck();
+    else setPollingEpoch((value) => value + 1);
   };
   const openRevision = () => { if (!job) return; setRevisionQuery((current) => current || job.query); setShowRevision(true); };
   const revise = async () => {
@@ -210,15 +259,16 @@ export default function JobPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-4xl">
-        {loading ? <LoadingState label="正在读取任务状态" /> : error ? <ErrorState description={error} action={<Button onClick={load}>重新读取</Button>} /> : job && (
+        {loading ? <LoadingState label="正在读取任务状态" /> : error ? <ErrorState description={error} action={<Button onClick={reconnect}>重新读取</Button>} /> : job && (
           <>
             <Link href="/history" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="h-4 w-4" aria-hidden="true" />返回任务列表</Link>
             <div className="mt-4 grid gap-5 border-b pb-7 sm:grid-cols-[1fr_auto] sm:items-start">
               <div className="min-w-0"><p className="eyebrow">研究任务 · {job.id.slice(0, 6)}</p><h1 className="break-content title-balance mt-3 font-display text-2xl font-semibold leading-relaxed sm:text-3xl">{job.query}</h1><div className="mt-4 flex flex-wrap items-center gap-3"><StatusBadge status={job.status} /><span className="font-mono text-xs tabular-nums text-muted-foreground">{job.progress}%</span><span className="text-xs text-muted-foreground">B站 · {job.analysis_mode === 'deep' ? '内容深度分析' : '标准分析'}</span></div></div>
-              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="secondary" className="text-destructive" size="sm" onClick={cancel} isLoading={cancelling}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying || reconcilingRetry}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重试任务</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}{reconcilingRetry && ' 正在核对服务器上的任务状态，请稍候。'}</p>}{cancelError && <p className="max-w-sm text-sm text-destructive" role="alert">{cancelError}</p>}</div>
+              <div className="grid justify-items-start gap-2 sm:justify-items-end"><div className="flex flex-wrap gap-2">{['pending', 'running', 'waiting_user', 'waiting_candidate_confirmation'].includes(job.status) && <Button variant="secondary" className="text-destructive" size="sm" onClick={cancel} isLoading={cancelling}><Square className="h-3.5 w-3.5" aria-hidden="true" />取消任务</Button>}{job.can_retry && <Button size="sm" onClick={retry} isLoading={retrying || reconcilingRetry} disabled={retryUnconfirmed}><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />重试任务</Button>}{job.can_revise && <Button variant="secondary" size="sm" onClick={openRevision}><PencilLine className="h-3.5 w-3.5" aria-hidden="true" />修改范围</Button>}</div>{retryError && <p className="max-w-sm text-sm text-destructive" role="alert">{retryError}{reconcilingRetry && ' 正在核对服务器上的任务状态，请稍候。'}</p>}{cancelError && <p className="max-w-sm text-sm text-destructive" role="alert">{cancelError}</p>}</div>
             </div>
 
-            {refreshError && <div className="mt-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center" role="status"><p className="flex-1 text-sm leading-7">状态更新暂时中断，已保留当前内容与选择。{refreshError}</p><Button variant="secondary" size="sm" onClick={load}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />重新连接</Button></div>}
+            {retryUnconfirmed && <div className="mt-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center" role="status"><p className="flex-1 text-sm leading-7">重试结果仍未确认。请稍后继续核对，避免重复提交。</p><Button variant="secondary" size="sm" onClick={resumeRetryCheck}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />继续核对重试结果</Button></div>}
+            {refreshError && <div className="mt-5 flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center" role="status"><p className="flex-1 text-sm leading-7">状态更新暂时中断，已保留当前内容与选择。{refreshError}</p><Button variant="secondary" size="sm" onClick={reconnect}><RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />重新连接</Button></div>}
             <p className="mt-5 text-sm leading-7 text-muted-foreground" role="status">{job.is_stopping ? '正在停止并保存本次用量。完成后，这里会更新可用操作。' : job.status === 'waiting_user' ? '需要你补充下面的问题。提交后，研究会继续。' : job.status === 'waiting_candidate_confirmation' ? '样本已整理好，请决定哪些账号纳入分析。等待期间不会继续生成报告。' : job.status === 'pending' ? '任务已提交，正在等待后台接收。你可以离开，稍后从工作台继续查看。' : job.status === 'running' ? '正在依据公开样本处理研究。你可以离开页面，任务会继续执行。' : job.status === 'cancelled' ? `任务已取消，已产生的用量会保留。${job.can_retry ? '可以重试任务，或修改研究范围创建新任务。' : job.can_revise ? '可修改研究范围创建新任务。' : '请从工作台查看其他研究。'}` : job.status === 'failed' ? '这次研究暂未完成。请查看下方原因，再决定重试或修改范围。' : '研究记录已保存。'}</p>
 
             {job.revision_of_job_id && <p className="mt-4 text-sm text-muted-foreground">修订自 <Link href={`/jobs/${job.revision_of_job_id}`} className="font-mono font-semibold text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{job.revision_of_job_id.slice(0, 8)}</Link></p>}

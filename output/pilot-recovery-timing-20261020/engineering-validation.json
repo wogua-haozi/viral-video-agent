@@ -1,0 +1,76 @@
+{
+  "executedAt": "2026-10-20T10:23:52.286112+00:00",
+  "baseCommit": "580b7f90a12901a0165d15cbc3723885ec65708a",
+  "validatedState": "Final working tree delivered in the same commit as this record",
+  "scope": [
+    "Persist the real Arq delivery identity in the version/token fenced claim transaction; retain dispatch intent when context is absent",
+    "Bound retry reconciliation through old terminal versions; pause and allow read-only continuation when still unconfirmed"
+  ],
+  "backend": {
+    "passed": 300,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 16,
+    "seconds": 113.38,
+    "runner": "Independent .venv; pytest.main([-q]); loopback-only network guard; fixture provider credentials; dedicated PILOT_TEST_POSTGRES_URL and PILOT_TEST_REDIS_URL",
+    "newTests": 4,
+    "postgresArqSequence": [
+      "Start with arq_job_id NULL and durable dispatch intent",
+      "Actual custom Arq delivery starts running before API enqueue acknowledgement",
+      "Execution connection failure returns pending and real Arq Retry defers the delivery",
+      "Next claim fails all three database attempts; Arq retains the failed result",
+      "Queue-state reconciliation CAS advances to version 1 and queues a fresh delivery",
+      "Version 1 completes once; version 0 executed once; one existing usage record with unchanged fixture totals"
+    ]
+  },
+  "frontendLint": "passed",
+  "frontendProductionBuild": "passed",
+  "browserScriptSyntax": "passed",
+  "browser": {
+    "passed": 31,
+    "newChecks": 5,
+    "pageErrors": [],
+    "fixtureOnly": true,
+    "browser": "151.0.7922.34",
+    "screenshots": 22,
+    "delayedCommit": "Old failed and cancelled version 0 each read three times before version 1 pending/running/completed; one retry POST per case",
+    "confirmationWindowMs": 20000,
+    "unconfirmedRecovery": "Automatic reads pause, duplicate POST disabled, manual continuation/reconnect only reads; failed and hung GET plus generic proxy 408 covered",
+    "explicitRejection": "Known business 4xx rejection shown without uncertain reconciliation",
+    "lifecycle": "Current task page; no new cross-refresh retry persistence protocol",
+    "visualInspection": "Actual mobile dark-theme unconfirmed retry banner and disabled/recheck controls inspected; no viewport overflow"
+  },
+  "unchangedChecks": {
+    "composeMergeTestsInFullPytest": 6,
+    "standaloneLinuxMediaSmoke": "Not rerun in this batch; prior record remains historical",
+    "standaloneCaddyTlsSmoke": "Not rerun in this batch; prior record remains historical",
+    "dependenciesMigrationsAndDefaults": "unchanged"
+  },
+  "sourceSha256": {
+    "src/worker.py": "e6dbcbfc09716a3ed41c9c918471d1c70cefc1238c6e178a2f23da3f8197cecc",
+    "tests/test_worker_claim_recovery.py": "0520a22cb32406b65d4a338f75495a46e0357d84e665d1db214b37b2aa7b8806",
+    "tests/test_worker_dispatch_postgres.py": "93b6b6b86549566a02cf586bcf347363829e58eed82a5b2abc78e202f9785f0d",
+    "frontend/src/app/jobs/[id]/page.tsx": "1e27cb8cee64a2d771e07fc47e119be31a87719ce3c948a3346579b9eb033da9",
+    "frontend/tests/creator-pilot.cjs": "5e719a37e31f5358c237cda178bfb5d7d2aca61c6bc4a20e6e5372708b7f223f"
+  },
+  "cleanup": {
+    "ownedTmpfsTestContainersRemoved": true,
+    "frontendPreviewStopped": true,
+    "persistentVolumesAndOtherContainersUnchanged": true
+  },
+  "privacy": {
+    "realEnvironmentUnchanged": true,
+    "noPaidProvidersOrExternalVideos": true,
+    "noBusinessDatabaseMigration": true
+  },
+  "knownEnvironmentIssue": "MCP duplicate ASGI response logs remain a real Docker acceptance item for requests, cancellation and shutdown; fixture ACK/cleanup passing does not establish harmlessness",
+  "unverified": [
+    "Existing business database backup/restore/upgrade",
+    "Full Docker application build and business chain including MCP ASGI compatibility",
+    "Public DNS/ACME certificate/deployment",
+    "Actual Bilibili download/FFmpeg/provider ASR/model availability",
+    "Real report source correctness and recommendation quality",
+    "Real task cost/latency and creator feedback"
+  ],
+  "nextGate": "Web ChatGPT read-only review of this repair; then user local real-task/report-quality acceptance before creator pilot"
+}

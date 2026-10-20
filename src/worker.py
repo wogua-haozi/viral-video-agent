@@ -730,7 +730,9 @@ async def _persist_result(job_id: uuid.UUID, result: dict) -> uuid.UUID:
         return report.id
 
 
-async def _claim_job_once(job_id: uuid.UUID, expected_version: int | None, token: str):
+async def _claim_job_once(
+    job_id: uuid.UUID, expected_version: int | None, token: str, arq_job_id: str | None = None,
+):
     now = datetime.now(timezone.utc)
     async with async_session_factory() as db:
         filters = [
@@ -747,6 +749,10 @@ async def _claim_job_once(job_id: uuid.UUID, expected_version: int | None, token
             .values(
                 status="running", started_at=now, completed_at=None,
                 error_code=None, error_message=None, dispatch_pending_at=None,
+                # A fast claim can precede the API's enqueue acknowledgement.
+                # Keep the real delivery identity under the same version/token
+                # fence; calls without Arq context must not erase an existing ID.
+                arq_job_id=arq_job_id if arq_job_id is not None else AnalysisJob.arq_job_id,
                 worker_token=token,
                 worker_lease_expires_at=now + timedelta(seconds=WORKER_LEASE_SECONDS),
             )
@@ -764,13 +770,13 @@ async def _claim_job_once(job_id: uuid.UUID, expected_version: int | None, token
         return job, synthesis_run is not None, token
 
 
-async def _claim_job(job_id: uuid.UUID, expected_version: int | None):
+async def _claim_job(job_id: uuid.UUID, expected_version: int | None, arq_job_id: str | None = None):
     # Reuse the token if COMMIT succeeded but its acknowledgement was lost.
     # A retry may reclaim only its own running row, never another worker's.
     token = str(uuid.uuid4())
     for attempt in range(3):
         try:
-            return await _claim_job_once(job_id, expected_version, token)
+            return await _claim_job_once(job_id, expected_version, token, arq_job_id)
         except (DBAPIError, DatabaseTimeoutError, ConnectionError, TimeoutError, asyncio.TimeoutError) as exc:
             # asyncpg connection setup can propagate native socket/timeout
             # exceptions without wrapping them in SQLAlchemy's DBAPIError.
@@ -860,6 +866,10 @@ async def _finish_attempt(execution: _Execution, *, interrupted: bool = False, f
                     job.status = "pending"
                     # Arq retains this execution's queue identity when Retry or
                     # infrastructure cancellation propagates to the worker.
+                    if job.arq_job_id is None:
+                        # Legacy/direct invocations may have no Arq context.
+                        # Keep a durable intent so they cannot miss both scans.
+                        job.dispatch_pending_at = datetime.now(timezone.utc)
                     retry_delay = 2 ** job.retry_count * 5
                     db.add(JobEvent(
                         job_id=job.id, event_type="queued", progress=job.progress, level="warning",
@@ -951,7 +961,7 @@ async def _execute_job(ctx: dict, job: AnalysisJob, synthesis_run: bool, executi
 
 async def run_analysis_job(ctx: dict, job_id_value: str, execution_version_value: int | None = None) -> None:
     job_id = uuid.UUID(job_id_value)
-    claimed = await _claim_job(job_id, execution_version_value)
+    claimed = await _claim_job(job_id, execution_version_value, ctx.get("job_id"))
     if claimed is None:
         return
     job, synthesis_run, token = claimed

@@ -99,11 +99,11 @@ async def test_claim_retries_transient_connection_failure_with_same_token(databa
     original = worker._claim_job_once
     tokens = []
 
-    async def interrupted(job_id, version, token):
+    async def interrupted(job_id, version, token, arq_job_id=None):
         tokens.append(token)
         if len(tokens) < 3:
             raise error_factory()
-        return await original(job_id, version, token)
+        return await original(job_id, version, token, arq_job_id)
 
     monkeypatch.setattr(worker, "_claim_job_once", interrupted)
     claimed = await worker._claim_job(job_id, 0)
@@ -117,7 +117,8 @@ async def test_claim_retries_transient_connection_failure_with_same_token(databa
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error_factory", [disconnected, TimeoutError])
 async def test_claim_commit_acknowledgement_loss_reclaims_only_its_own_token(database, monkeypatch, error_factory):
-    job_id = await pending_job(database)
+    job_id = await pending_job(database, arq_job_id=None)
+    delivery_id = f"actual-delivery:{uuid.uuid4()}"
     commits = 0
 
     @asynccontextmanager
@@ -137,12 +138,50 @@ async def test_claim_commit_acknowledgement_loss_reclaims_only_its_own_token(dat
             yield db
 
     monkeypatch.setattr(worker, "async_session_factory", lost_ack_factory)
-    claimed = await worker._claim_job(job_id, 0)
+    claimed = await worker._claim_job(job_id, 0, delivery_id)
     assert claimed is not None and commits == 2
-    assert await worker._claim_job(job_id, 0) is None
+    assert await worker._claim_job(job_id, 0, "other-delivery") is None
     job, usage = await read_state(database, job_id)
     assert job.worker_token == claimed[2] and job.status == "running"
+    assert job.arq_job_id == delivery_id
     assert usage.input_tokens == 11
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivery_id", [None, "actual-delivery"])
+async def test_claim_delivery_id_is_version_fenced_and_preserves_absent_context(database, delivery_id):
+    job_id = await pending_job(database, execution_version=1, arq_job_id="recorded-delivery")
+    assert await worker._claim_job(job_id, 0, "stale-delivery") is None
+    job, _ = await read_state(database, job_id)
+    assert job.arq_job_id == "recorded-delivery" and job.status == "pending"
+    assert await worker._claim_job(job_id, 1, delivery_id) is not None
+    job, usage = await read_state(database, job_id)
+    assert job.arq_job_id == (delivery_id or "recorded-delivery")
+    assert usage.input_tokens == 11
+
+
+@pytest.mark.asyncio
+async def test_retry_without_queue_identity_keeps_recoverable_dispatch_intent(database, monkeypatch):
+    job_id = await pending_job(database, arq_job_id=None)
+
+    async def transient_failure(*_args):
+        raise ConnectionError("local transient execution fixture")
+
+    monkeypatch.setattr(worker, "_execute_job", transient_failure)
+    with pytest.raises(Retry):
+        await worker.run_analysis_job({}, str(job_id), 0)
+    job, _ = await read_state(database, job_id)
+    assert (job.status, job.retry_count, job.arq_job_id) == ("pending", 1, None)
+    assert job.dispatch_pending_at is not None
+    queue = Queue(JobStatus.not_found)
+    now = datetime.now(timezone.utc) + timedelta(seconds=dispatch.DISPATCH_RECONCILE_MIN_AGE_SECONDS + 1)
+    assert await dispatch.reconcile_pending_dispatches(queue=queue, now=now) == {
+        "leased": 1, "recovered": 1, "failed": 0,
+    }
+    job, usage = await read_state(database, job_id)
+    assert (job.status, job.execution_version, job.retry_count) == ("pending", 0, 1)
+    assert queue.enqueued == [(str(job_id), 0)]
+    assert (usage.input_tokens, usage.asr_seconds) == (11, 3)
 
 
 @pytest.mark.asyncio

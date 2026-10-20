@@ -35,7 +35,8 @@ Set-Location D:\internship\viral-video-agent\frontend
 # 本机已有的 Playwright；其他电脑改为自身安装目录
 $env:VVA_PLAYWRIGHT_PACKAGE='D:\srp_project\AI_school\report-web\node_modules\playwright-core'
 $env:VVA_BROWSER_EXECUTABLE='C:\Users\0\AppData\Local\ms-playwright\chromium-1234\chrome-win64\chrome.exe'
-$env:VVA_OUTPUT_DIR='D:\internship\viral-video-agent\backups\pilot-hardening-20261020\browser-output'
+$env:VVA_OUTPUT_DIR=Join-Path 'D:\internship\viral-video-agent\backups' ('browser-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+if (Test-Path -LiteralPath $env:VVA_OUTPUT_DIR) { throw '验收目录已存在，请换新目录以保留历史结果' }
 $env:VVA_BASE_URL='http://127.0.0.1:3007'
 node tests/creator-pilot.cjs
 ```
@@ -121,11 +122,14 @@ docker compose @compose stop app worker
 if ($LASTEXITCODE -ne 0) { throw '未能确认停止业务写入，停止升级' }
 docker compose @compose up -d --wait postgres
 if ($LASTEXITCODE -ne 0) { throw '已确认的 PostgreSQL 未就绪，停止备份' }
+$prePilotBackup=Join-Path 'backups' ('vva-pre-pilot-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.dump')
+if (Test-Path -LiteralPath $prePilotBackup) { throw '备份目标已存在，禁止覆盖' }
+New-Item -ItemType Directory -Path backups -Force | Out-Null
 docker compose @compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f /tmp/vva-pre-pilot.dump'
 if ($LASTEXITCODE -ne 0) { throw '数据库备份失败，停止升级' }
-docker compose @compose cp postgres:/tmp/vva-pre-pilot.dump backups/vva-pre-pilot.dump
+docker compose @compose cp postgres:/tmp/vva-pre-pilot.dump $prePilotBackup
 if ($LASTEXITCODE -ne 0) { throw '备份复制失败，停止升级' }
-Get-FileHash backups/vva-pre-pilot.dump -Algorithm SHA256
+Get-FileHash -LiteralPath $prePilotBackup -Algorithm SHA256
 ```
 
 3. 在独立的 PostgreSQL 16 恢复库验证 `pg_restore`，核对迁移版本、关键表行数及历史用量，再演练 `0004 → 0005`；仅有备份文件或 `pg_restore --list` 不算恢复验证。未完成恢复演练则不升级现用库。
@@ -199,7 +203,7 @@ PostgreSQL 及内部依赖应先按前节启动并确认目标，迁移命令不
 2. 提交一条明确的 B 站标准研究，例如自己的赛道、受众、希望解决的创作问题与样本范围。记录任务 ID、起止时间、执行版本和提交前额度；刷新/重提未决请求应回到同一任务，额度只增加一次，等待页跟踪到终态。普通文字日期不保证被结构化过滤，以报告披露为准。
 3. 逐条打开报告来源，抽查关键观察与建议能否由样本支持，核对发布时间/采集时间、样本量、缺失值/真实零值、部分结果和局限。引用存在只证明结构合法；需要用户判断是否可信、可执行，不能用模型自评分替代。
 4. 完成 Markdown 导出、打印/PDF、创建/打开/撤销分享及提交反馈；另一应用账号不可读私有任务/报告。记录反馈是否保存；记录 token、ASR 秒数、估算费用和供应商账单，响应丢失可能导致费用不可观测，两者不必相等。
-5. 在另一个明确的小预算任务中测试运行中取消，等待停止中结束，确认下载/转码子进程与临时音频已清理，用量仍保留；失败任务可有限重试，重试请求响应中断后页面应继续跟踪服务端。范围修订 503/响应丢失后在**同一标签页刷新**再提交同一内容，任务/额度只新增一次；不要关标签页或清除站点存储来验证此保证。
+5. 在另一个明确的小预算任务中测试运行中取消，等待停止中结束，确认下载/转码子进程与临时音频已清理，用量仍保留；失败任务可有限重试。重试响应先断连时，即使先读到相同执行版本的旧失败/取消状态，当前任务页也应继续核对，发现新版本后跟踪到终态；20 秒仍无确认则提示“重试结果仍未确认”，重试按钮禁用，只用“继续核对重试结果”或“重新连接”恢复只读核对，不再次 POST。范围修订 503/响应丢失后在**同一标签页刷新**再提交同一内容，任务/额度只新增一次；不要关标签页或清除站点存储来验证此保证。
 6. 若准备开放深度模式，再选少量有权分析的公开视频验证真实下载、FFmpeg、ASR及相同视频缓存复用；第二次不应增加 ASR 用量。总超时/中断恢复如需实测，在独立验收环境短时配置并观察，不能对现用业务库/其他用户任务断服务。保留任务 ID、失败原因、恢复事件和耗时。
 
 只有真实任务完成、主要来源可核对、建议可执行且取消/失败路径可靠后，才邀请少量创作者；否则把明确复现与报告问题回填 [唯一任务清单](project-status.md#当前任务与进入试用的门槛)。P0-C/vNext-C 的冻结历史不因本轮结果改变。
@@ -215,4 +219,4 @@ PostgreSQL 及内部依赖应先按前节启动并确认目标，迁移命令不
 | pytest 无 PostgreSQL 结果 | 未设置专用 `PILOT_TEST_POSTGRES_URL`，不是迁移已验证 |
 | ASR 环境不全 | 核对 `yt-dlp`、`ffmpeg`、转写配置；不要为测试偷偷调用外部服务 |
 | `MCP cancellation cleanup not confirmed` | 客户端 3 秒内未收到远端实际清理完成通知；核对 MCP 连通性和 App/Worker/MCP 镜像是否同步，检查远端进程与临时目录。该告警不代表清理已经完成，取消不会触发本地重复下载 |
-| MCP SSE 关闭后 ASGI 二次响应日志 | 本轮独立环境 MCP 1.30.0 / Starlette 1.9.0 / uvicorn 0.54.0 曾记录，资源清理与 ACK 仍通过。完整 Docker 验收需核对是否影响实际请求/关停；若持续影响使用，先处理已复现的依赖兼容问题，不在其他项目全局环境中升级 |
+| MCP SSE 关闭后 ASGI 二次响应日志 | 独立夹具环境 MCP 1.30.0 / Starlette 1.9.0 / uvicorn 0.54.0 已观察到，夹具中的资源清理与 ACK 通过不代表该日志无害。仍须在完整 Docker 栈实测正常请求、取消与关停；有影响先解决兼容性再开放试用，不在其他项目全局环境中升级 |
