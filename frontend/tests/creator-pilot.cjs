@@ -141,6 +141,7 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
       throw new Error(`Unexpected API request: ${request.method()} ${endpoint}`);
     });
     const page = await context.newPage(); page.on('pageerror', (error) => pageErrors.push(error.message));
+    const mediaSession = await context.newCDPSession(page);
     const screenshots = [];
     const settleLayout = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const screenshot = async (name, fullPage = true) => { await page.evaluate(() => document.fonts.ready); if (fullPage) await page.evaluate(() => scrollTo(0, 0)); await settleLayout(); screenshots.push(name); return page.screenshot({ path: path.join(output, name), fullPage, animations: 'disabled' }); };
@@ -157,14 +158,60 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
       for (const item of results) assert.ok(item.ratio >= item.minimum, `${theme}: ${item.pair} contrast ${item.ratio}`);
       contrastResults[theme] = results;
     };
+    const reducedTransparency = async (reduce) => {
+      await mediaSession.send('Emulation.setEmulatedMedia', { media: 'screen', features: [
+        { name: 'prefers-reduced-motion', value: 'reduce' },
+        { name: 'prefers-reduced-transparency', value: reduce ? 'reduce' : 'no-preference' },
+      ] });
+      assert.equal(await page.evaluate((expected) => matchMedia(`(prefers-reduced-transparency: ${expected})`).matches, reduce ? 'reduce' : 'no-preference'), true);
+      assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
+      await settleLayout();
+    };
+    const checkMaterial = async (locator, opaque) => {
+      const style = await locator.evaluate((element) => {
+        const css = getComputedStyle(element);
+        const channels = css.backgroundColor.match(/[\d.]+/g).map(Number);
+        return { backdrop: css.backdropFilter, webkitBackdrop: css.getPropertyValue('-webkit-backdrop-filter'), alpha: channels[3] ?? 1 };
+      });
+      assert.equal(style.backdrop, 'none');
+      if (style.webkitBackdrop) assert.equal(style.webkitBackdrop, 'none');
+      assert.ok(opaque ? style.alpha === 1 : style.alpha >= 0.7, `reduced transparency fill: ${JSON.stringify(style)}`);
+    };
+    const checkDrawerKeyboard = async (dialog) => {
+      const selector = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+      const count = await dialog.evaluate((element, query) => {
+        const controls = Array.from(element.querySelectorAll(query)).filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+        controls[0]?.focus(); return controls.length;
+      }, selector);
+      assert.ok(count >= 2, 'drawer must expose keyboard-accessible controls');
+      await page.keyboard.press('Shift+Tab');
+      assert.equal(await dialog.evaluate((element, query) => {
+        const controls = Array.from(element.querySelectorAll(query)).filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+        return document.activeElement === controls[controls.length - 1];
+      }, selector), true);
+      await page.keyboard.press('Tab');
+      assert.equal(await dialog.evaluate((element, query) => {
+        const controls = Array.from(element.querySelectorAll(query)).filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+        const active = document.activeElement;
+        const css = getComputedStyle(active);
+        const bounds = active.getBoundingClientRect();
+        return active === controls[0] && active.matches(':focus-visible') &&
+          (css.boxShadow !== 'none' || (css.outlineStyle !== 'none' && parseFloat(css.outlineWidth) > 0)) &&
+          bounds.left >= 0 && bounds.right <= innerWidth + 1 && bounds.top >= 0 && bounds.bottom <= innerHeight + 1;
+      }, selector), true);
+    };
     await page.goto(baseURL); await page.getByRole('heading', { name: /让真实样本/ }).waitFor();
     await page.getByRole('button', { name: '切换到深色主题' }).waitFor();
     assert.equal(await page.locator('html').evaluate((el) => el.classList.contains('light')), true);
     await checkContrast('light'); await fit('home light'); await screenshot('home-desktop-light.png'); await screenshot('home-hero-light.png', false);
     await page.setViewportSize({ width: 375, height: 812 }); await fit('home light mobile'); await screenshot('home-mobile-light.png');
     await page.setViewportSize({ width: 768, height: 1024 }); await fit('home tablet');
-    await page.evaluate(() => document.documentElement.style.fontSize = '200%'); await fit('home enlarged text');
+    const homeRootFontSize = await page.locator('html').evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+    await page.evaluate(() => document.documentElement.style.fontSize = '200%');
+    await page.waitForFunction((baseline) => parseFloat(getComputedStyle(document.documentElement).fontSize) >= baseline * 1.99, homeRootFontSize);
+    await fit('home enlarged text');
     await page.evaluate(() => document.documentElement.style.fontSize = '');
+    await page.waitForFunction((baseline) => Math.abs(parseFloat(getComputedStyle(document.documentElement).fontSize) - baseline) < 0.01, homeRootFontSize);
     pass('light default, tablet and enlarged text layouts');
     await page.getByRole('button', { name: '切换到深色主题' }).click(); await page.reload();
     await page.getByRole('button', { name: '切换到浅色主题' }).waitFor(); await checkContrast('dark');
@@ -176,14 +223,41 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     await page.getByRole('navigation', { name: '移动端公共导航' }).getByRole('link', { name: /分析模板/ }).click();
     await page.getByRole('dialog', { name: '移动导航' }).waitFor({ state: 'hidden' }); pass('mobile hash navigation closes drawer');
     await page.getByRole('button', { name: '打开导航菜单' }).click();
-    await page.getByRole('button', { name: '关闭导航菜单' }).waitFor(); await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '关闭导航菜单' }).waitFor();
+    const publicDrawer = page.getByRole('dialog', { name: '移动导航' });
+    await settleLayout();
+    const motion = await publicDrawer.locator('.motion-enter').evaluate((element) => {
+      const css = getComputedStyle(element);
+      const control = getComputedStyle(element.querySelector('button'));
+      const milliseconds = (list) => list.split(',').map((value) => parseFloat(value) * (value.trim().endsWith('ms') ? 1 : 1000));
+      return {
+        preference: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        animation: milliseconds(css.animationDuration), transition: milliseconds(control.transitionDuration),
+        scroll: getComputedStyle(document.documentElement).scrollBehavior, opacity: css.opacity,
+      };
+    });
+    assert.equal(motion.preference, true); assert.equal(motion.scroll, 'auto'); assert.equal(motion.opacity, '1');
+    assert.ok([...motion.animation, ...motion.transition].every((duration) => duration <= 0.01), JSON.stringify(motion));
+    pass('reduced motion disables actual drawer animation, control transitions and smooth scrolling');
+    await reducedTransparency(true);
+    await checkMaterial(page.locator('header.navigation-material'), true); await checkMaterial(publicDrawer, false);
+    await checkDrawerKeyboard(publicDrawer);
+    await page.keyboard.press('Escape');
     await page.getByRole('dialog', { name: '移动导航' }).waitFor({ state: 'hidden' });
     assert.equal(await page.getByRole('button', { name: '打开导航菜单' }).evaluate((el) => el === document.activeElement), true);
     pass('mobile navigation Escape returns focus to its trigger');
+    await reducedTransparency(false);
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${baseURL}/dashboard`);
     await page.getByRole('heading', { name: '最近的研究' }).waitFor(); await fit('dashboard desktop'); await screenshot('dashboard-desktop-dark.png');
     await page.getByRole('button', { name: '切换到浅色主题' }).click(); await settleLayout(); await screenshot('dashboard-desktop-light.png');
     await page.setViewportSize({ width: 320, height: 740 }); await fit('dashboard 320px');
+    await reducedTransparency(true); await page.getByRole('button', { name: '打开菜单', exact: true }).click();
+    const workspaceDrawer = page.getByRole('dialog', { name: '工作台移动导航' });
+    await workspaceDrawer.waitFor(); await checkMaterial(page.locator('header.navigation-material'), true); await checkMaterial(workspaceDrawer, false);
+    await checkDrawerKeyboard(workspaceDrawer); await page.keyboard.press('Escape'); await workspaceDrawer.waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('button', { name: '打开菜单', exact: true }).evaluate((element) => element === document.activeElement), true);
+    pass('public and workspace drawers trap Tab in both directions and restore visible trigger focus');
+    await reducedTransparency(false);
     await page.setViewportSize({ width: 375, height: 812 }); await screenshot('dashboard-mobile-light.png');
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`${baseURL}/jobs/new`); await page.getByLabel('你的研究问题', { exact: false }).fill('分析B站近30天相机评测，比较标题和开场。');
@@ -332,6 +406,13 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     pass('explicit retry rejection does not enter uncertain reconciliation');
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(`${baseURL}/reports/fixture-report`); await page.getByRole('heading', { name: report.title }).first().waitFor();
     assert.equal(await page.locator('#report-claims').getAttribute('open'), null); assert.equal(await page.locator('#report-evidence').getAttribute('open'), null);
+    await reducedTransparency(true); await page.getByRole('button', { name: '分享', exact: true }).click();
+    const shareDialog = page.getByRole('dialog', { name: '创建只读分享链接' });
+    await shareDialog.waitFor(); await checkMaterial(shareDialog, false);
+    await page.keyboard.press('Escape'); await shareDialog.waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('button', { name: '分享', exact: true }).evaluate((element) => element === document.activeElement), true);
+    await reducedTransparency(false);
+    pass('reduced transparency uses solid navigation and unblurred public, workspace and modal scrims');
     await screenshot('report-desktop-dark.png'); await page.getByRole('button', { name: '切换到浅色主题' }).click(); await screenshot('report-desktop-light.png');
     await page.locator('.report-prose').getByRole('link', { name: '[ev_a1b2c3d4]', exact: true }).first().click();
     assert.equal(await page.locator('#report-evidence').evaluate((el) => el.open), true);
@@ -342,6 +423,24 @@ function pass(name) { checks.push(name); console.log(`PASS ${name}`); }
     assert.equal(await knowledgeCard.locator('dt').getByText('播放', { exact: true }).count(), 0);
     await screenshot('evidence-desktop-light.png'); pass('citation opens evidence; actual zero, missing values, published and fetched time stay distinct'); pass('Bilibili knowledge references are not classified as video samples');
     await page.getByRole('link', { name: '核对结论 · 2', exact: true }).click(); await page.getByText('模型自评 78%', { exact: true }).waitFor(); pass('confidence is labeled as uncalibrated model self-assessment');
+    for (const id of ['report-claims', 'report-evidence']) {
+      await page.locator(`#${id} > summary`).focus(); await page.keyboard.press('Enter');
+      assert.equal(await page.locator(`#${id}`).getAttribute('open'), null);
+      await page.keyboard.press('Space'); assert.notEqual(await page.locator(`#${id}`).getAttribute('open'), null);
+    }
+    const reportTextSize = await page.locator('.report-prose > p').first().evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+    await page.setViewportSize({ width: 320, height: 740 });
+    const reportRootFontSize = await page.locator('html').evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+    await page.evaluate(() => document.documentElement.style.fontSize = '200%');
+    await page.waitForFunction((baseline) => parseFloat(getComputedStyle(document.documentElement).fontSize) >= baseline * 1.99, reportRootFontSize);
+    await fit('expanded report with 200% text at 320px');
+    const enlargedTextSize = await page.locator('.report-prose > p').first().evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
+    assert.ok(enlargedTextSize >= reportTextSize * 1.8, `report text did not enlarge: ${reportTextSize} -> ${enlargedTextSize}`);
+    await page.locator('#report-evidence > summary').focus();
+    assert.equal(await page.locator('#report-evidence > summary').evaluate((element) => element.getBoundingClientRect().width <= innerWidth), true);
+    await page.evaluate(() => document.documentElement.style.fontSize = '');
+    await page.waitForFunction((baseline) => Math.abs(parseFloat(getComputedStyle(document.documentElement).fontSize) - baseline) < 0.01, reportRootFontSize);
+    pass('report details support Enter and Space; actual report text enlarges without overflow at 320px');
     await page.setViewportSize({ width: 320, height: 740 }); await fit('report 320px'); pass('expanded report and evidence fit a 320px viewport');
     await page.locator('#report-claims > summary').click(); await page.locator('#report-evidence > summary').click();
     await page.setViewportSize({ width: 375, height: 812 }); await screenshot('report-mobile-light.png');

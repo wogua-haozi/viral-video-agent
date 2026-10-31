@@ -34,8 +34,8 @@ function ThemeButton() {
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       aria-label={mounted ? (isDark ? '切换到浅色主题' : '切换到深色主题') : '切换主题'}
     >
-      <Sun className="h-4 w-4 scale-100 transition-transform dark:scale-0" aria-hidden="true" />
-      <Moon className="absolute h-4 w-4 scale-0 transition-transform dark:scale-100" aria-hidden="true" />
+      <Sun className="h-4 w-4 scale-100 transition-transform motion-reduce:transition-none dark:scale-0" aria-hidden="true" />
+      <Moon className="absolute h-4 w-4 scale-0 transition-transform motion-reduce:transition-none dark:scale-100" aria-hidden="true" />
     </Button>
   );
 }
@@ -77,7 +77,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [open]);
 
   const navigation = (
-    <nav className="space-y-1" aria-label="工作台导航">
+    <nav className="space-y-1.5" aria-label="工作台导航">
       {items.map(({ href, label, icon: Icon, active }) => {
         const selected = active(pathname);
         return (
@@ -86,12 +86,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href={href}
             aria-current={selected ? 'page' : undefined}
             className={cn(
-              'flex min-h-11 items-center gap-3 rounded-xl px-3.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              selected ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              'flex min-h-11 items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm leading-6 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
+              selected ? 'bg-muted font-semibold text-foreground' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
             )}
           >
             <Icon className="h-[1.125rem] w-[1.125rem] shrink-0" aria-hidden="true" />
-            <span>{label}</span>
+            <span className="min-w-0">{label}</span>
           </Link>
         );
       })}
@@ -99,9 +99,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const accountActions = (
-    <div className="flex items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-1.5">
       <ThemeButton />
-      <Link href="/settings" className="grid min-h-11 w-11 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="打开账号设置">
+      <Link href="/settings" className="grid min-h-11 w-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none" aria-label="打开账号设置">
         <UserRound className="h-4 w-4" aria-hidden="true" />
       </Link>
     </div>
@@ -110,28 +110,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background">
       <aside className="fixed inset-y-0 left-0 z-50 hidden w-[17rem] flex-col overflow-y-auto border-r border-border/60 bg-surface p-5 print:hidden lg:flex">
-        <Logo />
-        <div className="mt-10">{navigation}</div>
+        <Logo className="px-2 [&>span]:whitespace-normal" />
+        <div className="mt-9">{navigation}</div>
         <div className="mt-auto px-3.5 pt-10">
           <p className="text-xs leading-6 text-muted-foreground">基于 B 站公开样本<br />保留来源，说明局限。</p>
         </div>
       </aside>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-secondary/60 backdrop-blur-sm lg:hidden" role="dialog" aria-modal="true" aria-label="工作台移动导航" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
-          <aside ref={drawerRef} className="motion-enter flex h-dvh w-[min(22rem,88vw)] flex-col overflow-y-auto border-r bg-surface-elevated p-5 shadow-float">
-            <div className="flex items-center justify-between gap-4 border-b pb-4"><Logo /><Button ref={closeButtonRef} variant="ghost" size="sm" className="w-11 px-0" onClick={() => setOpen(false)} aria-label="关闭菜单"><X className="h-5 w-5" aria-hidden="true" /></Button></div>
+        <div className="modal-scrim fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="工作台移动导航" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
+          <aside ref={drawerRef} className="motion-enter flex h-dvh w-[min(22rem,88vw)] flex-col overflow-y-auto overscroll-contain border-r border-border/60 bg-surface-elevated p-5 shadow-float">
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-5"><Logo className="min-w-0 [&>span]:min-w-0 [&>span]:whitespace-normal" /><Button ref={closeButtonRef} variant="ghost" size="sm" className="w-11 px-0" onClick={() => setOpen(false)} aria-label="关闭菜单"><X className="h-5 w-5" aria-hidden="true" /></Button></div>
             <div className="mt-6">{navigation}</div>
-            <div className="mt-auto border-t pt-5 text-xs text-muted-foreground">公开样本 · 来源可回看 · 结论可追溯</div>
+            <div className="mt-auto px-3.5 pt-8 text-xs leading-6 text-muted-foreground">公开样本 · 来源可回看 · 结论可追溯</div>
           </aside>
         </div>
       )}
 
       <div className="app-content lg:pl-[17rem]">
-        <header className="sticky top-0 z-40 flex min-h-16 items-center justify-between border-b border-border/60 bg-background/90 px-4 backdrop-blur-xl print:hidden sm:px-6 lg:px-8">
+        <header className="navigation-material sticky top-0 z-40 flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-4 py-2 print:hidden sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <Button ref={openButtonRef} variant="ghost" size="sm" className="w-11 px-0 lg:hidden" onClick={() => setOpen(true)} aria-label="打开菜单" aria-expanded={open}><Menu className="h-5 w-5" aria-hidden="true" /></Button>
-            <p className="truncate text-sm font-medium text-muted-foreground">B 站内容研究</p>
+            <p className="text-sm font-medium leading-6 text-muted-foreground">B 站内容研究</p>
           </div>
           {accountActions}
         </header>

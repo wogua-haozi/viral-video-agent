@@ -13,11 +13,11 @@ const templates = [
 export default function HomePage() {
   return (
     <main>
-      <section className="bg-surface/60">
-        <div className="mx-auto max-w-7xl px-5 pb-16 pt-16 sm:px-8 sm:pb-24 sm:pt-24 lg:px-10">
+      <section className="bg-background">
+        <div className="mx-auto max-w-7xl px-5 pb-16 pt-14 sm:px-8 sm:pb-24 sm:pt-20 lg:px-10">
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-sm font-medium text-muted-foreground">为 B 站创作者而作</p>
-            <h1 className="title-balance mt-6 text-4xl font-semibold leading-[1.25] tracking-tight sm:text-5xl lg:text-6xl">让真实样本，<br />带来清晰方向。</h1>
+            <h1 className="title-balance mt-5 text-4xl font-semibold leading-[1.25] tracking-tight sm:text-5xl lg:text-6xl">让真实样本，<br />带来清晰方向。</h1>
             <p className="mx-auto mt-6 max-w-xl text-pretty text-base leading-8 text-muted-foreground sm:text-lg">从一个内容问题开始，读懂公开样本。<br className="hidden sm:block" />将观察整理成有来源、可核对的研究报告。</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <LinkButton href="/jobs/new" size="lg">开始一次研究<ArrowRight className="h-4 w-4" aria-hidden="true" /></LinkButton>
@@ -25,29 +25,37 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="mx-auto mt-14 max-w-4xl rounded-3xl border border-border/70 bg-card p-6 shadow-sm sm:mt-16 sm:p-9">
+          <div className="mx-auto mt-12 max-w-4xl rounded-3xl border border-border/50 bg-card p-5 shadow-editorial sm:mt-16 sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground"><FileSearch className="h-4 w-4" aria-hidden="true" />报告预览</span>
-              <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">结构示例</span>
+              <span className="text-sm font-medium text-muted-foreground">报告预览</span>
+              <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">结构示例</span>
             </div>
-            <h2 className="mt-7 text-xl font-semibold tracking-tight sm:text-2xl">一个好标题，如何吸引目标观众？</h2>
-            <div className="mt-7 grid gap-6 border-t pt-6 sm:grid-cols-3 sm:gap-8">
-              {[
-                ['观察', '从样本中梳理标题的共同结构。'],
-                ['推断', '解释线索，并说明证据的局限。'],
-                ['建议', '形成下一次创作可以验证的方向。'],
-              ].map(([title, description]) => <div key={title}><h3 className="text-sm font-semibold">{title}</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p></div>)}
+            <h2 className="mt-6 text-xl font-semibold leading-relaxed tracking-tight sm:text-2xl">一个好标题，如何吸引目标观众？</h2>
+            <div className="mt-6 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-8">
+              <div className="rounded-2xl bg-muted/60 p-5">
+                <FileSearch className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+                <h3 className="mt-4 text-sm font-semibold">样本材料</h3>
+                <p className="mt-2 text-sm leading-7 text-muted-foreground">标题与来源<br />发布时间与采集时间</p>
+                <p className="mt-4 border-t border-border/60 pt-4 text-xs leading-6 text-muted-foreground">保留原始出处，供你逐项核对。</p>
+              </div>
+              <dl className="divide-y divide-border/60">
+                {[
+                  ['观察', '从样本中梳理标题的共同结构。'],
+                  ['推断', '解释线索，并说明证据的局限。'],
+                  ['建议', '形成下一次创作可以验证的方向。'],
+                ].map(([title, description]) => <div key={title} className="py-4 first:pt-0 last:pb-0 md:first:pt-2"><dt className="text-sm font-semibold">{title}</dt><dd className="mt-1.5 text-sm leading-7 text-muted-foreground">{description}</dd></div>)}
+              </dl>
             </div>
-            <p className="mt-7 border-t pt-5 text-xs leading-6 text-muted-foreground">仅展示报告结构，不代表实际分析结论。正式报告保留来源链接与采集时间。</p>
+            <p className="mt-6 border-t border-border/60 pt-5 text-xs leading-6 text-muted-foreground">仅展示报告结构，不代表实际分析结论。正式报告保留来源链接与采集时间。</p>
           </div>
         </div>
       </section>
 
-      <section id="templates" className="mx-auto max-w-7xl scroll-mt-24 px-5 py-16 sm:px-8 sm:py-24 lg:px-10">
+      <section id="templates" className="mx-auto max-w-7xl scroll-mt-24 px-5 pb-16 pt-4 sm:px-8 sm:pb-24 sm:pt-6 lg:px-10">
         <div className="mb-9 text-center"><h2 className="section-heading">你想研究什么？</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">选一个起点，也可以用自己的话描述问题。</p></div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {templates.map(({ title, template, description, icon: Icon }) => (
-            <Link key={template} href={`/jobs/new?template=${encodeURIComponent(template)}`} className="group min-w-0 rounded-2xl bg-surface p-5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Link key={template} href={`/jobs/new?template=${encodeURIComponent(template)}`} className="group min-w-0 rounded-2xl border border-border/50 bg-card p-5 transition-colors hover:border-border hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
               <div className="flex items-center justify-between"><Icon className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" /><ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" aria-hidden="true" /></div>
               <h3 className="mt-6 text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p>
             </Link>
@@ -55,7 +63,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="evidence" className="scroll-mt-24 border-t">
+      <section id="evidence" className="scroll-mt-24 bg-surface">
         <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24 lg:px-10">
           <div className="mx-auto max-w-xl text-center"><h2 className="section-heading">每个判断，都有来处。</h2><p className="mt-4 text-sm leading-8 text-muted-foreground">回到样本核对结论，了解研究的范围与局限，<br className="hidden sm:block" />再决定什么值得用于下一次创作。</p></div>
           <ol className="mt-12 grid gap-9 sm:grid-cols-3 sm:gap-10">
@@ -63,7 +71,7 @@ export default function HomePage() {
               ['描述研究范围', '写清主题、账号、时间和关心的问题。'],
               ['整理公开样本', '能力开启时，可补充范围并确认候选账号。'],
               ['核对来源与结论', '查看实际数据和来源；样本不足时，报告说明局限。'],
-            ].map(([title, description], index) => <li key={title}><span className="text-sm tabular-nums text-muted-foreground">0{index + 1}</span><h3 className="mt-3 text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p></li>)}
+            ].map(([title, description], index) => <li key={title}><span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted text-sm tabular-nums text-muted-foreground">{index + 1}</span><h3 className="mt-4 text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p></li>)}
           </ol>
         </div>
       </section>

@@ -19,7 +19,7 @@ export function HeaderActions() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 sm:gap-2">
       <Button
         variant="ghost"
         size="sm"
@@ -27,11 +27,11 @@ export function HeaderActions() {
         onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
         aria-label={!mounted ? '切换主题' : resolvedTheme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
       >
-        <Sun className="h-4 w-4 scale-100 transition-transform dark:scale-0" aria-hidden="true" />
-        <Moon className="absolute h-4 w-4 scale-0 transition-transform dark:scale-100" aria-hidden="true" />
+        <Sun className="h-4 w-4 scale-100 transition-transform motion-reduce:transition-none dark:scale-0" aria-hidden="true" />
+        <Moon className="absolute h-4 w-4 scale-0 transition-transform motion-reduce:transition-none dark:scale-100" aria-hidden="true" />
       </Button>
-      <Link href="/login" className="hidden min-h-11 items-center px-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex">登录</Link>
-      <LinkButton href="/jobs/new" size="sm">进入工作台</LinkButton>
+      <Link href="/login" className="hidden min-h-11 items-center rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:inline-flex">登录</Link>
+      <LinkButton href="/jobs/new" size="sm" className="min-w-0 shrink whitespace-normal py-2 text-center">进入工作台</LinkButton>
     </div>
   );
 }
@@ -75,45 +75,47 @@ export function Header() {
 
   if (isAppPage) return null;
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-xl print:hidden">
-      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Logo className="[&>span]:hidden min-[420px]:[&>span]:inline" />
-        <nav className="hidden items-center gap-1 lg:flex" aria-label="公共导航">
-          {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className="inline-flex min-h-11 items-center rounded-xl px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="flex items-center gap-1.5">
-          <HeaderActions />
-          <Button ref={openButtonRef} variant="ghost" size="sm" className="w-11 px-0 lg:hidden" onClick={() => setOpen(true)} aria-label="打开导航菜单" aria-expanded={open}>
-            <Menu className="h-5 w-5" aria-hidden="true" />
-          </Button>
+    <>
+      <header className="navigation-material sticky top-0 z-40 border-b border-border/60 print:hidden">
+        <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 sm:px-6 lg:px-8">
+          <Logo className="min-w-11 [&>span]:hidden min-[420px]:[&>span]:inline" />
+          <nav className="hidden flex-wrap items-center justify-center gap-1 lg:flex" aria-label="公共导航">
+            {navItems.map((item) => (
+              <Link key={item.href} href={item.href} className="inline-flex min-h-11 items-center rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none">
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1 lg:flex-initial">
+            <HeaderActions />
+            <Button ref={openButtonRef} variant="ghost" size="sm" className="w-11 px-0 lg:hidden" onClick={() => setOpen(true)} aria-label="打开导航菜单" aria-expanded={open}>
+              <Menu className="h-5 w-5" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
-      </div>
+      </header>
 
       {open && (
-        <div className="fixed inset-0 top-0 z-50 bg-secondary/60 backdrop-blur-sm lg:hidden" role="dialog" aria-modal="true" aria-label="移动导航" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
-          <div ref={drawerRef} className="motion-enter ml-auto flex h-dvh w-[min(22rem,88vw)] flex-col overflow-y-auto border-l bg-surface-elevated p-5 shadow-float">
-            <div className="flex items-center justify-between gap-4 border-b pb-4">
-              <Logo />
+        <div className="modal-scrim fixed inset-0 z-50 print:hidden lg:hidden" role="dialog" aria-modal="true" aria-label="移动导航" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
+          <div ref={drawerRef} className="motion-enter ml-auto flex h-dvh w-[min(22rem,88vw)] flex-col overflow-y-auto overscroll-contain border-l border-border/60 bg-surface-elevated p-5 shadow-float">
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-5">
+              <Logo className="min-w-0 [&>span]:min-w-0 [&>span]:whitespace-normal" />
               <Button ref={closeButtonRef} variant="ghost" size="sm" className="w-11 px-0" onClick={() => setOpen(false)} aria-label="关闭导航菜单"><X className="h-5 w-5" aria-hidden="true" /></Button>
             </div>
             <nav className="mt-6 space-y-1" aria-label="移动端公共导航">
               {navItems.map((item) => (
-                <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="flex min-h-12 items-center rounded-xl px-4 text-base font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Link key={item.href} href={item.href} onClick={() => setOpen(false)} className="flex min-h-12 items-center rounded-lg px-4 py-3 text-base font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none">
                   {item.label}
                 </Link>
               ))}
             </nav>
-            <div className="mt-auto border-t pt-5">
-              <p className="text-sm text-muted-foreground">当前仅支持公开可访问的 B 站样本。</p>
+            <div className="mt-auto pt-8">
+              <p className="text-sm leading-6 text-muted-foreground">当前仅支持公开可访问的 B 站样本。</p>
               <LinkButton href="/login" variant="secondary" className="mt-4 w-full">登录工作台</LinkButton>
             </div>
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 }

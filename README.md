@@ -6,9 +6,9 @@
 
 当前主线：**稳定性与试用入口完善 → 工程验证并推送 → 网页 ChatGPT 只读复审 → 用户本地真实任务与报告质量验收 → 小范围创作者试用 → 反馈迭代**。本轮不自动部署或调用收费服务。
 
-当前阶段：试用前工程补强及两个恢复时序补修已完成并推送（`d78f981`）。2026-10-20 用户转述网页只读复审结论：本轮两个修复通过，未发现需先返修的新问题，可以进入本地真实验收。完整业务链路与报告质量通过后，再邀请少量创作者试用；唯一任务清单见项目状态页。
+当前阶段：2026-10-31 用户已通过本轮前端视觉验收，项目回到**等待真实使用反馈**，不自动追加优化。既有可靠性补修及只读复审结论保留；完整业务链路、MCP Docker 行为与真实报告质量仍待用户验收，通过后再邀请少量创作者试用。唯一任务清单见项目状态页。
 
-2026-10-20 工程回归完成后，已按用户要求清理本项目 `.venv`、前端 `node_modules`/`.next` 及 Python/pytest 缓存；源码、真实配置、数据、恢复备份和验收截图保留。宿主开发需先恢复依赖；Docker 自行构建镜像，不依赖这些宿主目录。保留简洁柔和界面及 10/18 展示图。运行、停止与数据保护见 [本地运行手册](docs/local-development.md)。
+本轮验收后清理本项目可重建依赖、缓存与构建，源码、真实配置、数据、恢复备份和验收截图保留。宿主开发需先恢复依赖；Docker 自行构建镜像，不依赖这些宿主目录。下方展示 10/31 实际新版界面，旧截图与验收保留历史。运行、停止与数据保护见 [本地运行手册](docs/local-development.md)。
 
 - [项目状态、实际验收与唯一任务清单](docs/project-status.md)
 - [Windows 启动、停止、测试与数据库备份回退](docs/local-development.md)
@@ -53,36 +53,36 @@ v2 的重点不是“角色数量”，而是把语义决策留给 Planner、Res
 
 ## 前端体验
 
-前端采用更简洁柔和的视觉：暖白与石墨灰背景、少量蓝色强调、系统无衬线字体、留白和轻圆角。首次访问默认浅色，已保存的深浅主题偏好继续生效。首页、工作台、表单、候选确认与报告共用颜色和组件，不依赖在线字体或图片素材。
+前端按 Apple design 原则微调为中性浅灰白与石墨灰表面，保留少量蓝色主要操作、系统无衬线字体和清晰留白。首页以“样本材料 → 观察 → 推断与建议”呈现研究结构；任务、表单和报告共用柔和层级。首次访问默认浅色，已有深浅偏好保留；支持减少动态/透明度和文字放大，不依赖在线字体或图片素材。
 
-![浅色产品首页](output/soft-ui-20261018/home-desktop-light.png)
+![浅色产品首页](output/apple-ui-20261031/home-desktop-light.png)
 
 <details>
 <summary>移动端首页、用户 Dashboard 与报告详情</summary>
 
-![移动端首页](output/soft-ui-20261018/home-mobile-light.png)
+![移动端首页](output/apple-ui-20261031/home-mobile-light.png)
 
-![用户 Dashboard](output/soft-ui-20261018/dashboard-desktop-dark.png)
+![用户 Dashboard](output/apple-ui-20261031/dashboard-desktop-dark.png)
 
-![分析进度（演示）](output/soft-ui-20261018/job-progress-desktop-light.png)
+![分析进度（演示）](output/apple-ui-20261031/job-progress-desktop-light.png)
 
-![候选确认（演示）](output/soft-ui-20261018/candidates-desktop-light.png)
+![候选确认（演示）](output/apple-ui-20261031/candidates-desktop-light.png)
 
-![浅色工作台（演示）](output/soft-ui-20261018/dashboard-desktop-light.png)
+![浅色工作台（演示）](output/apple-ui-20261031/dashboard-desktop-light.png)
 
-![报告详情（演示）](output/soft-ui-20261018/report-desktop-dark.png)
+![报告详情（演示）](output/apple-ui-20261031/report-desktop-dark.png)
 
-![浅色移动报告（演示）](output/soft-ui-20261018/report-mobile-light.png)
+![浅色移动报告（演示）](output/apple-ui-20261031/report-mobile-light.png)
 </details>
 
-以上截图于 2026-10-18 由本机 Windows 前端生产构建实际运行生成；工作台、候选、报告使用虚构演示数据，不代表真实研究结果。运行时间和检查项目见 [本机浏览器结果](output/soft-ui-20261018/ui-validation.json)。设计决策见 [前端设计说明](docs/frontend-design.md)，2026-10-17 书房版截图留作历史，功能契约与当时验证说明见 [创作者试用版改进记录](docs/creator-pilot-20261017.md)。[2026-07-15 前端验收记录](docs/frontend-validation-20260715.md) 保留为旧版基线。
+以上截图于 2026-10-31 由本机 Windows 前端生产构建实际运行生成；工作台、候选、报告使用虚构演示数据，不代表真实研究结果。**35 项浏览器检查通过、0 页面错误，用户视觉验收通过**；见 [本机浏览器结果](output/apple-ui-20261031/ui-validation.json) 和 [前端设计说明](docs/frontend-design.md)。[10/18 视觉验收](output/soft-ui-20261018/ui-validation.json)、10/17 书房版及 [2026-07-15 验收](docs/frontend-validation-20260715.md) 保留历史性质，不与当前展示混用。功能契约见 [创作者试用版改进记录](docs/creator-pilot-20261017.md)。
 
 ### 本轮创作者试用改进
 
 - 提交时预留月度任务额度；相同请求重发不会新建任务，失败、取消、重试和删除后保留已产生的用量。
 - Worker 使用执行版本、独立执行标识和心跳租约；超时覆盖完整执行阶段，丢失 Worker 的任务可由调度器有限恢复。
 - 领取事务保存真实 Arq 投递 ID，避免快于 API 回填时丢失恢复标记；无队列上下文的执行退回 pending 时保留派发意图。领取阶段短暂数据库故障有限重试；已派发但长期未领取时核对实际 Arq 状态，队列中仍有效的任务不重复派发，丢失或已结束的投递按 CAS 升执行版本恢复，共用重试上限且不新增额度。
-- 实时样本请求需要有效视频来源；缺失指标展示为“未知”，报告附录保留实际字段、发布时间、采集时间和样本边界。
+- 实时样本请求需要有效视频来源；缺失指标展示为“未提供”，报告附录保留实际字段、发布时间、采集时间和样本边界。
 - 新建分析保留同一请求的提交标识；范围修订在当前标签页按账号、源任务与内容保存未决请求，503/响应丢失后刷新仍复用幂等键。当前任务页的重试响应不确定时持续核对，旧版本终态不代表重试被拒绝；20 秒仍未确认则暂停自动核对、阻止重复提交，可继续只读核对，发现新执行版本后跟踪至终态。报告支持引用跳转。
 - 下载/转码由可终止的子进程树执行，取消和总超时等待清理；MCP 远端取消须有实际清理完成 ACK，3 秒未确认仅告警，不能视为已清理。MCP 使用内部 Redis 转写缓存，缓存故障只记录操作及异常类型。
 - 升级需要数据库迁移 `20261017_0005`。部署顺序、额度语义与验证边界见 [本轮记录](docs/creator-pilot-20261017.md)。
@@ -135,7 +135,7 @@ Worker
 ```powershell
 Set-Location D:\internship\viral-video-agent\frontend
 npm ci
-npm run dev -- --hostname 127.0.0.1 --port 3007
+npm run dev:local
 ```
 
 访问 [首页](http://127.0.0.1:3007) / [示例](http://127.0.0.1:3007/examples)，停止按 `Ctrl+C`。独立前端的真实注册、工作台与任务需要后端；夹具浏览器回归不需要业务服务。
@@ -320,7 +320,7 @@ cd ..
 docker compose config --quiet
 ```
 
-本机验收统一见 [项目状态](docs/project-status.md)，`d78f981` 的 [工程摘要](output/pilot-recovery-timing-20261020/engineering-validation.json) 记录 **300 项后端、31 项浏览器**及 lint/build 通过；`580b7f9` 的 296/26 项保留为 [首轮历史结果](output/pilot-hardening-20261020/engineering-validation.json)。上述结果属于清理前的工程验证，本次整理未重跑；网页只读复审已由用户转述通过，仍等待用户完整业务/真实报告验收。2026-07 的 vNext-C 工程通过与冻结结论见 [历史验收](docs/interactive-intelligence-vnext-c-validation-20260725.md)，不替代报告质量验收。
+本机验收统一见 [项目状态](docs/project-status.md)。10/31 前端 **35 项浏览器、lint/build** 通过并获用户视觉确认，见 [本轮工程摘要](output/apple-ui-20261031/engineering-validation.json)。后端未改，未重跑 `d78f981` 的 [300 项后端 / 31 项浏览器记录](output/pilot-recovery-timing-20261020/engineering-validation.json)；`580b7f9` 的 296/26 项仍为 [首轮历史结果](output/pilot-hardening-20261020/engineering-validation.json)。这些工程/视觉验收不替代完整业务及真实报告验收。vNext-C 工程通过与冻结见 [历史记录](docs/interactive-intelligence-vnext-c-validation-20260725.md)，P0-C 质量失败不改。
 
 ### 历史真实 API 冒烟（2026-07-13）
 

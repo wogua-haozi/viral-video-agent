@@ -1,0 +1,51 @@
+{
+  "validatedAt": "2026-10-31T11:18:23.813Z",
+  "closeoutDate": "2026-10-31",
+  "baseCommit": "543e7938ebb0fb1a084bead7eff99d39d50d28ec",
+  "validatedState": "Final accepted UI and documentation delivered in the same commit as this record",
+  "userVisualAcceptance": "Passed, explicitly confirmed by the user; closeout and standard Git push authorized",
+  "frontendLint": "passed before dependency cleanup",
+  "productionBuild": "passed before cleanup",
+  "browser": {
+    "passed": 35,
+    "pageErrors": [],
+    "screenshots": 22,
+    "fixtureOnly": true,
+    "browser": "151.0.7922.34"
+  },
+  "startup": {
+    "preview": "npm run preview",
+    "development": "npm run dev:local",
+    "homepageHttpStatus": 200,
+    "examplesHttpStatus": 200,
+    "fixedArgumentsAvoidPowerShellForwarding": true
+  },
+  "sourceIntegrity": "All frontend source and browser regression script hashes match the validated production build",
+  "dependencies": "No runtime dependency or lockfile change; only two fixed-argument local startup scripts added",
+  "cleanup": {
+    "directories": 3,
+    "files": 25782,
+    "logicalBytes": 468084323,
+    "protectedFilesVerified": 677,
+    "ownedBackupDuplicateRemoved": true,
+    "environmentKnowledgeUserFilesEvidenceAndBackupsPreserved": true
+  },
+  "docker": {
+    "projectContainers": 0,
+    "safeDeletionCandidates": 0,
+    "otherContainersPreserved": 5,
+    "volumesPreserved": 9,
+    "imagesPreserved": 7,
+    "buildCacheNotPruned": "77 records; shared or project ownership not established",
+    "businessStackStarted": false
+  },
+  "validationScope": "Frontend fixtures and local startup, static Compose configuration, documentation links, protected hashes and staged safety review. Backend unchanged; historical 300 backend results were not rerun.",
+  "history": "P0-C failed/frozen and vNext-C engineering frozen remain unchanged; 10/17, 10/18 and 10/20 records retained",
+  "unverified": [
+    "Full Docker business chain and existing database restore/upgrade",
+    "MCP ASGI duplicate response impact on requests, cancellation and shutdown",
+    "Real model/ASR/video availability, report correctness and recommendation quality",
+    "Real cost/latency and creator pilot feedback"
+  ],
+  "state": "Waiting for user usage and feedback; no automatic new optimization or deployment"
+}

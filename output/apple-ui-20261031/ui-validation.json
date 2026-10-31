@@ -1,0 +1,134 @@
+{
+  "fixtureOnly": true,
+  "executedAt": "2026-10-31T11:18:23.813Z",
+  "platform": "win32",
+  "browser": "151.0.7922.34",
+  "checks": [
+    "light default, tablet and enlarged text layouts",
+    "saved dark preference persists; light and dark text and input contrast pass",
+    "mobile hash navigation closes drawer",
+    "reduced motion disables actual drawer animation, control transitions and smooth scrolling",
+    "mobile navigation Escape returns focus to its trigger",
+    "public and workspace drawers trap Tab in both directions and restore visible trigger focus",
+    "new inquiry form fits a 320px viewport",
+    "lost creation responses reuse one idempotency key, including after reload",
+    "unresolved submission restores the query after reload",
+    "candidate choices and reasons survive failed polling and reload",
+    "missing candidate decision receives keyboard focus",
+    "candidate submission resumes the existing job once",
+    "cancelled job keeps polling while stopping, then stops after settlement",
+    "cancelled copy respects the server retry limit",
+    "revision 503 and lost responses reuse the persisted payload and key after reload",
+    "unresolved revision drafts are isolated by account and source job",
+    "editing a revision and restoring an earlier payload reuses its key; success clears only that attempt",
+    "uncertain retry (503) reconciles server state and polls pending/running to terminal once",
+    "uncertain retry (lost) reconciles server state and polls pending/running to terminal once",
+    "retry response lost before commit keeps checking through repeated old failed state",
+    "retry response lost before commit keeps checking through repeated old cancelled state",
+    "retry reconciliation is bounded; manual recovery only reads and does not submit again",
+    "proxy 408 stays uncertain; failed and hung reads time out and reconnect only resumes reading",
+    "explicit retry rejection does not enter uncertain reconciliation",
+    "reduced transparency uses solid navigation and unblurred public, workspace and modal scrims",
+    "citation opens evidence; actual zero, missing values, published and fetched time stay distinct",
+    "Bilibili knowledge references are not classified as video samples",
+    "confidence is labeled as uncalibrated model self-assessment",
+    "report details support Enter and Space; actual report text enlarges without overflow at 320px",
+    "expanded report and evidence fit a 320px viewport",
+    "dark theme printing uses light paper tokens and hides duplicate detail panels",
+    "initial evidence deep links expand and scroll after asynchronous report load",
+    "login-to-registration preserves the selected template destination",
+    "registration and public examples render in the new theme",
+    "no unhandled browser page errors"
+  ],
+  "pageErrors": [],
+  "contrastResults": {
+    "light": [
+      {
+        "pair": "foreground/background",
+        "ratio": 15.285303796357072,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/card",
+        "ratio": 6.439667090308983,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/muted",
+        "ratio": 5.6076988984866585,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary/card",
+        "ratio": 5.742941420362407,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary-foreground/primary",
+        "ratio": 5.742941420362407,
+        "minimum": 4.5
+      },
+      {
+        "pair": "input/surface-elevated",
+        "ratio": 3.4216649273860815,
+        "minimum": 3
+      }
+    ],
+    "dark": [
+      {
+        "pair": "foreground/background",
+        "ratio": 15.87026656382348,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/card",
+        "ratio": 7.428106750069732,
+        "minimum": 4.5
+      },
+      {
+        "pair": "muted-foreground/muted",
+        "ratio": 6.289223226793839,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary/card",
+        "ratio": 7.210719103292523,
+        "minimum": 4.5
+      },
+      {
+        "pair": "primary-foreground/primary",
+        "ratio": 8.141023995660543,
+        "minimum": 4.5
+      },
+      {
+        "pair": "input/surface-elevated",
+        "ratio": 3.4505330349413277,
+        "minimum": 3
+      }
+    ]
+  },
+  "screenshots": [
+    "home-desktop-light.png",
+    "home-hero-light.png",
+    "home-mobile-light.png",
+    "home-desktop-dark.png",
+    "home-hero-dark.png",
+    "home-mobile-dark.png",
+    "dashboard-desktop-dark.png",
+    "dashboard-desktop-light.png",
+    "dashboard-mobile-light.png",
+    "new-job-desktop-light.png",
+    "new-job-mobile-light.png",
+    "job-progress-desktop-light.png",
+    "candidates-desktop-light.png",
+    "candidates-mobile-dark.png",
+    "retry-unconfirmed.png",
+    "report-desktop-dark.png",
+    "report-desktop-light.png",
+    "evidence-desktop-light.png",
+    "report-mobile-light.png",
+    "register-mobile-light.png",
+    "register-desktop-light.png",
+    "examples-desktop-light.png"
+  ]
+}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Copy, ExternalLink, Link2, MessageSquare, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Copy, ExternalLink, Link2 } from 'lucide-react';
 import { Button, Card, Input, Modal, Select, StatusBadge, Textarea } from '@/components/ui';
 import type { Claim, EvidenceItem, JobEvent, UsageSummary } from '@/lib/api';
 import { createFeedback, createShareLink, readableError } from '@/lib/api';
@@ -37,16 +37,16 @@ export function EvidenceCard({ evidence }: { evidence: EvidenceItem }) {
   const publishedAt = typeof fields.published_at === 'string' ? fields.published_at : publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate.toISOString() : null;
   return (
     <Card id={evidence.evidence_id} tabIndex={-1} className="print-avoid scroll-mt-24 overflow-hidden p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <div className="p-4 sm:p-5">
+      <div className="p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="mb-3 flex flex-wrap items-center gap-2"><span className="rounded-sm border border-primary/25 bg-primary/5 px-2 py-1 font-mono text-[10px] text-primary">{evidence.evidence_id}</span><span className="text-xs text-muted-foreground">{sourceLabel}</span></div>
+            <div className="mb-3 flex flex-wrap items-center gap-2"><span className="max-w-full break-all rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">{evidence.evidence_id}</span><span className="text-xs text-muted-foreground">{sourceLabel}</span></div>
             <h3 className="break-content font-display text-lg font-semibold leading-7">{evidence.title || '未提供标题'}</h3>
             {evidence.summary && <p className="mt-3 text-pretty text-sm leading-7 text-muted-foreground">{evidence.summary}</p>}
           </div>
-          {url && <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-2 self-start rounded-lg border px-3 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">回看来源<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></a>}
+          {url && <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-2 self-start rounded-full bg-muted/70 px-4 text-xs font-medium text-primary transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">回看来源<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /></a>}
         </div>
-        {isVideo && <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">{evidenceFields.map(([key, label]) => <div key={key} className="min-w-0 bg-card p-3"><dt className="text-[11px] text-muted-foreground">{label}</dt><dd className="break-content mt-1.5 font-mono text-sm font-medium">{fieldValue(key === 'author' ? fields.author ?? fields.display_name : fields[key], key)}</dd></div>)}</dl>}
+        {isVideo && <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-5 rounded-xl bg-muted/50 p-4 sm:grid-cols-3">{evidenceFields.map(([key, label]) => <div key={key} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="break-content mt-1.5 text-sm font-medium tabular-nums">{fieldValue(key === 'author' ? fields.author ?? fields.display_name : fields[key], key)}</dd></div>)}</dl>}
         {isTranscript && <details className="mt-4 rounded-lg border bg-muted/20"><summary className="reading-summary !min-h-11 !px-3 !py-3 text-sm">查看转写原文{segments.length > 0 ? ` · ${segments.length} 个片段` : ''}<ChevronDown className="h-4 w-4" aria-hidden="true" /></summary><div className="max-h-96 overflow-y-auto border-t p-4 text-sm leading-7" tabIndex={0} role="region" aria-label={`${evidence.title}的转写内容`}>{segments.length > 0 ? <ol className="space-y-4">{segments.map((segment, index) => <li key={index}><span className="font-mono text-xs text-primary">{timecode(segment.start)}{typeof segment.end === 'number' ? ` – ${timecode(segment.end)}` : ''}</span><p className="break-content mt-1">{segment.text}</p></li>)}</ol> : <p className="whitespace-pre-wrap break-content">{transcriptText || '未提供转写原文'}</p>}</div></details>}
         <dl className="mt-5 grid gap-3 border-t pt-4 text-xs leading-6">{isVideo && <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">发布时间</dt><dd>{sourceDate(publishedAt)}</dd></div>}<div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">采集时间</dt><dd>{sourceDate(evidence.fetched_at)}</dd></div><div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">来源平台</dt><dd>{evidence.platform === 'bilibili' ? 'B 站' : evidence.platform || '未提供'}</dd></div><div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3"><dt className="text-muted-foreground">原始出处</dt><dd className="break-content">{url ? <a className="rounded-sm text-primary underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={url} target="_blank" rel="noreferrer">{url}</a> : '未提供'}</dd></div></dl>
       </div>
@@ -55,24 +55,24 @@ export function EvidenceCard({ evidence }: { evidence: EvidenceItem }) {
 }
 
 const claimMeta = {
-  observation: { label: '数据观察', index: 'OBS', style: 'border-info bg-info/5 text-info' },
-  inference: { label: '分析推断', index: 'INF', style: 'border-warning bg-warning/10 text-warning-foreground dark:text-warning' },
-  recommendation: { label: '行动建议', index: 'ACT', style: 'border-success bg-success/5 text-success' },
+  observation: { label: '数据观察', style: 'bg-info/5 text-info' },
+  inference: { label: '分析推断', style: 'bg-warning/10 text-warning-foreground dark:text-warning' },
+  recommendation: { label: '行动建议', style: 'bg-success/5 text-success' },
 } as const;
 
 export function ReportClaim({ claim }: { claim: Claim }) {
   const meta = claimMeta[claim.claim_type] ?? claimMeta.inference;
   return (
-    <article className={cn('print-avoid rounded-xl border bg-card p-4 sm:p-5', meta.style)}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[.12em]"><span className="font-mono text-[10px] opacity-70">{meta.index}</span>{meta.label}</span>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">模型自评 {Number.isFinite(claim.confidence) ? `${Math.round(claim.confidence * 100)}%` : '未提供'}</span>
+    <article className="print-avoid rounded-2xl border border-border/60 bg-card p-5 sm:p-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <span className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', meta.style)}>{meta.label}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">模型自评 {Number.isFinite(claim.confidence) ? `${Math.round(claim.confidence * 100)}%` : '未提供'}</span>
       </div>
       <p className="text-pretty text-sm font-medium leading-7 text-foreground">{claim.claim}</p>
       <div className="mt-4 flex flex-wrap gap-2">
         {claim.evidence_ids.length ? claim.evidence_ids.map((id) => (
-          <a key={id} href={`#${id}`} onClick={() => revealEvidence(id)} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-background px-2.5 font-mono text-[11px] font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <Link2 className="h-3 w-3" aria-hidden="true" />{id}
+          <a key={id} href={`#${id}`} onClick={() => revealEvidence(id)} className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-muted/70 px-3 py-2 font-mono text-xs text-primary transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="min-w-0 break-all">{id}</span>
           </a>
         )) : <span className="inline-flex items-center gap-2 text-xs font-medium text-warning-foreground dark:text-warning"><span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true" />该建议基于推断，不包含直接数值证据</span>}
       </div>
@@ -91,19 +91,19 @@ export function JobProgress({ status, events }: { status: string; events: JobEve
         const complete = event.progress >= 100;
         const failed = event.level === 'error';
         return (
-          <div key={`${event.created_at}-${index}`} className="relative grid grid-cols-[2.5rem_1fr] gap-3 pb-5 last:pb-0">
-            {index < events.length - 1 && <span className="absolute left-[1.18rem] top-8 h-[calc(100%-1.25rem)] w-px bg-border" aria-hidden="true" />}
-            <div className={cn('relative z-10 grid h-10 w-10 place-items-center rounded-full border bg-background', failed ? 'border-destructive/40 text-destructive' : complete ? 'border-success/40 text-success' : 'border-primary/40 text-primary')}>
+          <div key={`${event.created_at}-${index}`} className="relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-3 pb-6 last:pb-0">
+            {index < events.length - 1 && <span className="absolute left-[1.18rem] top-10 h-[calc(100%-2.5rem)] w-px bg-border/70" aria-hidden="true" />}
+            <div className={cn('relative z-10 grid h-10 w-10 place-items-center rounded-full', failed ? 'bg-destructive/10 text-destructive' : complete ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')}>
               {failed ? <span className="font-mono text-sm font-bold">!</span> : complete ? <Check className="h-4 w-4" aria-hidden="true" /> : <Clock3 className="h-4 w-4" aria-hidden="true" />}
             </div>
             <div className="min-w-0 pt-1">
-              <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-bold">{phaseLabels[event.event_type] || event.message}</p><span className="font-mono text-[11px] tabular-nums text-muted-foreground">{event.progress}%</span></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">{phaseLabels[event.event_type] || event.message}</p><span className="text-xs tabular-nums text-muted-foreground">{event.progress}%</span></div>
               <p className="break-content mt-1 text-sm leading-6 text-muted-foreground">{event.message}</p>
             </div>
           </div>
         );
       })}
-      {!events.length && <div className="flex items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"><Clock3 className="h-4 w-4 text-primary" aria-hidden="true" />{status === 'pending' ? '任务已创建，等待 Worker 接收。' : '正在读取任务事件。'}</div>}
+      {!events.length && <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground"><Clock3 className="h-4 w-4 shrink-0" aria-hidden="true" />{status === 'pending' ? '任务已创建，等待 Worker 接收。' : '正在读取任务事件。'}</div>}
     </div>
   );
 }
@@ -111,13 +111,10 @@ export function JobProgress({ status, events }: { status: string; events: JobEve
 export function UsageCard({ usage }: { usage: UsageSummary }) {
   const ratio = Math.min(100, Math.round((usage.jobs_used / Math.max(usage.jobs_limit, 1)) * 100));
   return (
-    <Card className="relative overflow-hidden p-5">
-      <div className="relative flex items-start justify-between gap-4">
-        <div><p className="eyebrow">本月已提交</p><p className="mt-2 text-3xl font-semibold tabular-nums">{usage.jobs_used}<span className="ml-2 text-sm font-medium text-muted-foreground">/ {usage.jobs_limit} 次</span></p></div>
-        <div className="grid h-11 w-11 place-items-center text-muted-foreground"><ShieldCheck className="h-5 w-5" aria-hidden="true" /></div>
-      </div>
-      <div className="relative mt-5 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="本月任务用量" aria-valuemin={0} aria-valuemax={usage.jobs_limit} aria-valuenow={usage.jobs_used}><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${ratio}%` }} /></div>
-      <p className="relative mt-3 text-xs leading-6 text-muted-foreground">本月已提交的任务次数。提交即占用额度；同一任务恢复或重试不重复计次，删除不返还。</p>
+    <Card className="p-5 sm:p-6">
+      <p className="text-sm font-medium text-muted-foreground">本月已提交</p><p className="mt-3 flex flex-wrap items-baseline gap-2 text-3xl font-semibold tabular-nums">{usage.jobs_used}<span className="text-sm font-normal text-muted-foreground">/ {usage.jobs_limit} 次</span></p>
+      <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="本月任务用量" aria-valuemin={0} aria-valuemax={usage.jobs_limit} aria-valuenow={usage.jobs_used}><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${ratio}%` }} /></div>
+      <p className="mt-4 text-xs leading-6 text-muted-foreground">本月已提交的任务次数。提交即占用额度；同一任务恢复或重试不重复计次，删除不返还。</p>
     </Card>
   );
 }
@@ -146,7 +143,7 @@ export function FeedbackForm({ reportId }: { reportId: string }) {
 
   return (
     <Card className="p-5 sm:p-6" data-print-hide="true">
-      <div className="mb-5 flex items-start gap-3 border-b pb-4"><div className="grid h-10 w-10 place-items-center text-muted-foreground"><MessageSquare className="h-4 w-4" aria-hidden="true" /></div><div><h2 className="mt-1 font-bold">这份报告有帮助吗？</h2></div></div>
+      <h2 className="mb-5 text-base font-semibold">这份报告有帮助吗？</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm font-semibold">是否有用<Select className="mt-2" value={useful ? 'yes' : 'no'} onChange={(event) => setUseful(event.target.value === 'yes')}><option value="yes">有用</option><option value="no">无用</option></Select></label>
         <label className="text-sm font-semibold">评分<Select className="mt-2" value={rating} onChange={(event) => setRating(event.target.value)}>{[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} 分</option>)}</Select></label>
@@ -209,13 +206,13 @@ export function ShareDialog({ reportId }: { reportId: string }) {
 
 export function JobSummaryCard({ id, title, status, progress, createdAt }: { id: string; title: string; status: string; progress: number; createdAt: string }) {
   return (
-    <Link href={`/jobs/${id}`} className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-      <Card className="p-4 transition-[border-color,box-shadow] group-hover:border-primary/30 group-hover:bg-muted/30 sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0"><p className="break-content font-medium leading-6">{title}</p><p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">{new Date(createdAt).toLocaleString('zh-CN')}</p></div>
+    <Link href={`/jobs/${id}`} className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+      <Card className="p-5 transition-colors group-hover:border-border group-hover:bg-muted/40 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 basis-40"><p className="break-content font-medium leading-7">{title}</p><p className="mt-2 text-xs tabular-nums text-muted-foreground">{new Date(createdAt).toLocaleString('zh-CN')}</p></div>
           <StatusBadge status={status} />
         </div>
-        <div className="mt-4 flex items-center gap-3"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full bg-primary" style={{ width: `${progress}%` }} /></div><span className="font-mono text-[11px] text-muted-foreground">{progress}%</span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" /></div>
+        <div className="mt-5 flex items-center gap-3"><div className="h-1 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="任务进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full bg-primary" style={{ width: `${progress}%` }} /></div><span className="text-xs tabular-nums text-muted-foreground">{progress}%</span><ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" /></div>
       </Card>
     </Link>
   );

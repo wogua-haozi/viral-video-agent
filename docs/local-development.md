@@ -1,10 +1,12 @@
 # Windows 本地运行与数据保护
 
-当前状态、验收和唯一任务清单见 [项目状态](project-status.md)。工作目录始终为 `D:\internship\viral-video-agent`。工程补修 `d78f981` 已推送到 `wogua-haozi/viral-video-agent`；2026-10-20 用户转述只读复审通过，可以开始本地真实验收。本次清理与文档整理只在本地完成；后续推送仍需明确确认批次，没有自动部署或收费调用。
+当前状态、验收和唯一任务清单见 [项目状态](project-status.md)。工作目录始终为 `D:\internship\viral-video-agent`。工程补修的既有只读复审结论保留；10/31 用户已通过前端视觉验收并授权本轮收尾与标准 Git 推送到 `wogua-haozi/viral-video-agent`。完成后等待反馈；后续推送仍需明确确认批次，没有自动部署或收费调用。
 
-2026-10-20 工程回归时恢复过独立 Python 与前端环境；验收后已按用户要求清理 `.venv`、`frontend/node_modules`、`frontend/.next` 和 Python/pytest 缓存。恢复宿主开发时按下方命令重建，不使用已删除的解释器或旧构建。Docker 不依赖这些宿主目录，仍按原 Compose 方式构建、拉取和启动；测试用 Caddy 镜像已清理，试用入口以后按需重新拉取。完整栈尚未验收，仍须先完成下方旧库备份恢复步骤；记录见 [本次清理](project-status.md#2026-10-20-验收后本项目清理与环境治理)。
+10/20 工程验收和 10/31 视觉验收后均按授权清理本项目可重建产物；当前 `.venv`、`frontend/node_modules`、`frontend/.next` 不保留。恢复宿主开发时按下方命令重建，不使用已删除的解释器或旧构建。Docker 不依赖这些宿主目录，仍按原 Compose 构建、拉取和启动；现用库安全要求不变。清理记录统一见 [项目状态](project-status.md)，全部数据卷和共享环境保留。
 
-当前已完成工程修复、推送及用户转述的网页只读复审，下一步是用户本地真实业务/报告验收，通过后才开始少量创作者试用。本文的部署命令是后续操作说明，本次整理没有运行完整业务栈。
+本轮完成后等待用户真实使用反馈，不自动追加优化。完整业务/报告质量仍需用户本地验收，通过后才开始少量创作者试用；MCP 请求、取消与关停的 Docker 实际验收继续保留。本文的部署命令是后续操作说明，本轮没有运行完整业务栈。
+
+当前已清理预览依赖和构建。只看前端可先按下面的开发方式恢复；生产预览须先安装依赖并重新构建：
 
 ## 前端预览与开发
 
@@ -14,19 +16,25 @@ PowerShell：
 Set-Location D:\internship\viral-video-agent\frontend
 # 清理后首次运行需要恢复依赖；安装完成后无需每次重复
 npm ci
-npm run dev -- --hostname 127.0.0.1 --port 3007
+npm run dev:local
 ```
 
 浏览 [首页](http://127.0.0.1:3007) 与 [示例](http://127.0.0.1:3007/examples)。停止按 `Ctrl+C`。独立前端只提供公共页预览，注册、工作台、提交任务需要后端；浏览器回归里的工作台和报告使用明确的虚构接口夹具。
 
 ```powershell
+Set-Location D:\internship\viral-video-agent\frontend
+npm ci
+if ($LASTEXITCODE -ne 0) { throw '前端依赖恢复失败，停止构建' }
 npm run lint
+if ($LASTEXITCODE -ne 0) { throw '前端检查失败，停止构建' }
 npm run build
 if ($LASTEXITCODE -ne 0) { throw '前端构建失败，停止启动旧构建' }
-npm run start -- --hostname 127.0.0.1 --port 3007
+npm run preview
 ```
 
 本机已实际使用生产构建运行回归。由于项目保留 Docker 的 `output: standalone` 设置，`next start` 会打印提示；本地服务可启动，Docker 正式入口是镜像中的 `node server.js`。
+
+Windows PowerShell 使用上面的固定参数脚本，避免 `npm run ... -- --hostname ...` 转发时丢失参数、把 IP 当作项目目录。已有构建直接 `npm run preview`；修改源码后先重新 build。`dev:local` 用于需要热更新的开发预览，两者均在 `127.0.0.1:3007`，不要同时启动。
 
 另一终端运行既有浏览器回归（不调用业务后端）：
 

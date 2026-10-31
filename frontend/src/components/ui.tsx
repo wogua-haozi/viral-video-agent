@@ -21,13 +21,13 @@ type ButtonSize = 'sm' | 'md' | 'lg';
 export function buttonStyles({ variant = 'primary', size = 'md', className }: { variant?: ButtonVariant; size?: ButtonSize; className?: string } = {}) {
   return cn(
     'inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-medium transition-[color,background-color,border-color,box-shadow] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
-    variant === 'primary' && 'border border-transparent bg-primary text-primary-foreground hover:bg-primary/90',
-    variant === 'secondary' && 'border border-border bg-surface text-foreground hover:bg-muted',
+    variant === 'primary' && 'border border-transparent bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-primary/90 active:bg-primary',
+    variant === 'secondary' && 'border border-border/80 bg-surface text-foreground hover:bg-muted active:bg-secondary',
     variant === 'ghost' && 'border border-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
     variant === 'danger' && 'border border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90',
     size === 'sm' && 'min-h-11 px-3 text-sm',
-    size === 'md' && 'min-h-11 px-4 text-sm',
-    size === 'lg' && 'min-h-12 px-5 text-base',
+    size === 'md' && 'min-h-11 px-5 text-sm',
+    size === 'lg' && 'min-h-12 px-6 text-base',
     className,
   );
 }
@@ -64,7 +64,7 @@ export function LinkButton({ className, variant = 'primary', size = 'md', ...pro
   return <Link className={buttonStyles({ variant, size, className })} {...props} />;
 }
 
-const fieldStyles = 'w-full rounded-lg border border-input bg-surface-elevated text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-200 placeholder:text-muted-foreground hover:border-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60';
+const fieldStyles = 'w-full rounded-lg border border-input bg-surface-elevated text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-200 placeholder:text-muted-foreground hover:border-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/15 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(({ className, ...props }, ref) => (
   <input ref={ref} className={cn(fieldStyles, 'min-h-12 px-3.5 text-base sm:text-sm', className)} {...props} />
@@ -82,7 +82,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 Textarea.displayName = 'Textarea';
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-xl border bg-card text-card-foreground shadow-editorial', className)} {...props} />;
+  return <div className={cn('rounded-xl border border-border/70 bg-card text-card-foreground shadow-editorial', className)} {...props} />;
 }
 
 const statusStyles: Record<string, string> = {
@@ -118,7 +118,7 @@ const statusLabels: Record<string, string> = {
 
 export function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={cn('inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold', statusStyles[status] ?? statusStyles.pending)}>
+    <span className={cn('inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium', statusStyles[status] ?? statusStyles.pending)}>
       <span className={cn('h-1.5 w-1.5 rounded-full', statusDots[status] ?? statusDots.pending)} aria-hidden="true" />
       {statusLabels[status] ?? status}
     </span>
@@ -199,7 +199,7 @@ export function Modal({ open, title, children, onClose }: { open: boolean; title
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[70] grid place-items-center bg-secondary/70 p-4 backdrop-blur-sm"
+      className="modal-scrim fixed inset-0 z-[70] grid place-items-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -208,7 +208,7 @@ export function Modal({ open, title, children, onClose }: { open: boolean; title
       <div ref={dialogRef} className="w-full max-w-lg">
         <Card className="motion-enter max-h-[min(760px,calc(100dvh-2rem))] overflow-y-auto bg-surface-elevated p-5 shadow-float sm:p-6">
           <div className="mb-5 flex items-center justify-between gap-4 border-b pb-4">
-            <div><p className="eyebrow">Dialog</p><h2 id={titleId} className="mt-1 text-lg font-bold">{title}</h2></div>
+            <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
             <Button ref={closeRef} variant="ghost" size="sm" className="w-11 px-0" onClick={onClose} aria-label="关闭对话框"><X className="h-5 w-5" aria-hidden="true" /></Button>
           </div>
           {children}

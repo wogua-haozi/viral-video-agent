@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "next dev --hostname 127.0.0.1 --port 3007",
     "build": "next build",
     "start": "next start",
+    "preview": "next start --hostname 127.0.0.1 --port 3007",
     "lint": "next lint"
   },
   "dependencies": {
